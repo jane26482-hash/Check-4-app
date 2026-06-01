@@ -101,7 +101,6 @@ function ConfirmModal({ title, message, onConfirm, onCancel }) {
 }
 
 
-// --- 구글맵 컴포넌트 ---
 function GoogleImageMap({ location, onChange }) {
   return (
     <div className="relative w-full h-[400px] bg-[#e5e5e5] rounded-xl overflow-hidden shadow-inner group select-none cursor-crosshair border border-gray-300">
@@ -187,7 +186,6 @@ function RegisterForm({ user, setProfile, setView, showToast }) {
 function CalendarView({ logs, userProfile, showToast }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   
-  // 캘린더 모달 상태 관리
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDateStr, setSelectedDateStr] = useState('');
   const [category, setCategory] = useState(LOG_CATEGORIES[0]);
@@ -197,7 +195,6 @@ function CalendarView({ logs, userProfile, showToast }) {
   const [formError, setFormError] = useState('');
 
 
-  // 삭제 팝업 상태 관리
   const [deleteTargetId, setDeleteTargetId] = useState(null);
 
 
@@ -212,13 +209,11 @@ function CalendarView({ logs, userProfile, showToast }) {
   for (let i = 1; i <= new Date(year, month+1, 0).getDate(); i++) cells.push(i);
 
 
-  // 날짜 클릭 시 모달창 열기
   const handleDayClick = (day) => {
     if (!day) return;
     const dateStr = fmt(year, month, day);
     setSelectedDateStr(dateStr);
     
-    // 모달창 값 초기화
     setCategory(LOG_CATEGORIES[0]);
     setLocation('');
     setInspectorName(userProfile.name);
@@ -227,7 +222,6 @@ function CalendarView({ logs, userProfile, showToast }) {
   };
 
 
-  // 점검 일지 파이어베이스에 저장
   const handleSaveLog = async () => {
     if (!location.trim() || !inspectorName.trim()) { 
       setFormError('위치와 점검자명을 모두 입력해주세요.'); 
@@ -253,7 +247,6 @@ function CalendarView({ logs, userProfile, showToast }) {
   };
 
 
-  // 점검 일지 삭제
   const deleteLog = async () => {
     if (!deleteTargetId) return;
     try { 
@@ -321,11 +314,9 @@ function CalendarView({ logs, userProfile, showToast }) {
       </div>
 
 
-      {/* 모달 창 렌더링: 카테고리, 위치, 점검자명 입력 폼 */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
-            
             <div className="bg-slate-800 p-5 flex justify-between items-center text-white">
               <h3 className="font-black text-lg flex items-center gap-2"><Icon name="clipboard-list" className="text-blue-400"/> {selectedDateStr} 점검 등록</h3>
               <button onClick={() => setIsModalOpen(false)} className="hover:bg-white/20 p-1.5 rounded-full"><Icon name="x" size={20}/></button>
@@ -366,7 +357,6 @@ function CalendarView({ logs, userProfile, showToast }) {
       )}
 
 
-      {/* 기록 삭제용 모달 */}
       {deleteTargetId && <ConfirmModal title="점검일지 삭제" message="정말로 캘린더에서 이 기록을 삭제하시겠습니까?" onConfirm={deleteLog} onCancel={() => setDeleteTargetId(null)} />}
     </div>
   );
@@ -411,6 +401,7 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
       let emailTriggered = false;
 
 
+      // 조치 완료 변경 감지
       if (existingData) { 
         await db.collection(reportsPath).doc(existingData.id).update(data); 
         if (existingData.status !== '조치 완료' && formData.status === '조치 완료') emailTriggered = true;
@@ -421,13 +412,29 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
       }
 
 
+      // 조치 완료 시 - 데이터베이스의 모든 유저 이메일을 긁어와 Outlook 실행
       if (emailTriggered) {
         setSubmit('sending'); 
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        // 1. users 컬렉션에서 가입된 모든 사람 이메일 긁어오기
+        const usersSnapshot = await db.collection('users').get();
+        const allUserEmails = usersSnapshot.docs.map(d => d.data().email).filter(Boolean);
+        
+        // 2. 아웃룩 환경에 맞춰 이메일들을 세미콜론(;)으로 연결
+        const toEmails = allUserEmails.join(';'); 
+
+
+        await new Promise(resolve => setTimeout(resolve, 1000)); // 발송 중 UI 시뮬레이션
+
+
+        // 3. 메일 제목과 내용 자동 작성
         const subject = `[조치 완료] "${formData.title}" 시설물 안전/VOC 조치 결과 안내`;
-        const body = `안녕하세요 ${formData.inspectorName}님,\n\n보고해주신 아래 시설물에 대한 조치가 성공적으로 완료되었습니다.\n\n[점검 상세 내역]\n- 점검 위치: ${formData.locationDesc}\n- 점검 일자: ${formData.date}\n- 공종 분류: ${formData.trade}\n- 현재 상태: 조치 완료\n\n항상 안전한 시설 관리에 힘써주셔서 감사합니다.`;
-        window.location.href = `mailto:${formData.inspectorEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-        showToast(`조치 완료! ${formData.inspectorEmail}로 결과 메일을 발송합니다.`);
+        const body = `안녕하세요,\n\n보고해주신 아래 시설물에 대한 조치가 성공적으로 완료되었습니다.\n\n[점검 상세 내역]\n- 점검 위치: ${formData.locationDesc}\n- 점검 일자: ${formData.date}\n- 공종 분류: ${formData.trade}\n- 담당 점검자: ${formData.inspectorName}\n- 현재 상태: 조치 완료\n\n항상 안전한 시설 관리에 힘써주셔서 감사합니다.`;
+        
+        // 4. 내 아웃룩(또는 기본 메일 앱) 띄우기 (수신자에 모든 유저 포함)
+        window.location.href = `mailto:${toEmails}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        
+        showToast(`조치 완료! 등록된 모든 인원에게 결과를 공유합니다.`);
       } else {
         showToast('성공적으로 저장되었습니다.'); 
       }
@@ -489,7 +496,7 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
           {isSubmitting === 'saving' ? (
             <><Icon name="clock" size={20} className="animate-spin" /> 저장 처리 중...</>
           ) : isSubmitting === 'sending' ? (
-            <><Icon name="mail" size={20} className="animate-pulse" /> 조치 완료 메일 발송 중...</>
+            <><Icon name="mail" size={20} className="animate-pulse" /> 아웃룩(메일) 호출 중...</>
           ) : '저장 완료하기'}
         </button>
       </div>
@@ -498,12 +505,10 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
 }
 
 
-// --- 시설안전관리 상세 보기 컴포넌트 ---
 function ReportDetail({ report, userProfile, onEdit, onDelete, showToast }) {
   const isAuthor = report.inspectorUid === userProfile.uid;
   const [showConfirm, setShowConfirm] = useState(false);
   const doDelete = async () => { try { await db.collection(reportsPath).doc(report.id).delete(); showToast('삭제되었습니다.'); onDelete(); } catch { showToast('삭제 오류'); } };
-  
   return (
     <div className="bg-white rounded-2xl shadow-sm border p-6 md:p-8 w-full max-w-7xl mx-auto relative">
       {showConfirm && <ConfirmModal title="기록 삭제" message="정말로 이 기록을 삭제하시겠습니까?" onConfirm={doDelete} onCancel={() => setShowConfirm(false)} />}
@@ -549,7 +554,6 @@ function App() {
   const toast = (msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 5000); };
 
 
-  // 🚨 타임아웃 안전장치가 포함된 초기 인증 로직 🚨
   useEffect(() => {
     let isResolved = false;
     const fallbackTimer = setTimeout(() => {
@@ -625,7 +629,6 @@ function App() {
   }, [user, userProfile]);
 
 
-  // 에러 화면
   if (view === 'error') return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-lg w-full text-center border-t-8 border-red-500">
@@ -638,7 +641,6 @@ function App() {
   );
 
 
-  // 로딩 화면
   if (view === 'loading') return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-gray-500">
       <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-blue-500 border-solid mb-4"></div>
@@ -647,11 +649,9 @@ function App() {
   );
 
 
-  // 등록 화면
   if (view === 'register') return <RegisterForm user={user} setProfile={setUserProfile} setView={setView} showToast={toast} />;
 
 
-  // 필터링 적용
   const filtered = reports.filter(r => {
     const matchSearch = r.title.includes(searchTerm) || r.locationDesc.includes(searchTerm);
     const matchStatus = statusFilter ? r.status === statusFilter : true;
