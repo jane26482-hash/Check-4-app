@@ -63,7 +63,7 @@ const logsPath = 'dailyLogs';
 const userPath = (uid) => `users/${uid}`;
 
 
-// 대분류에 긴급화재안전점검 추가
+// 대분류
 const CATEGORIES = ['경기 중 시설 VOC', '일일 화재점검', '일일 안전 및 시설 점검', '긴급화재안전점검(6/2~6/3)'];
 const TRADES = ['전기', '소방', '기계', '건축', '안전'];
 const STATUSES = ['조치 예정', '조치 중', '조치 완료'];
@@ -184,9 +184,8 @@ function RegisterForm({ user, setProfile, setView, showToast }) {
 }
 
 
-// --- 엑셀로 내보내기 탭 ---
+// --- 엑셀로 내보내기 탭 (이미지 포함 버전으로 수정됨) ---
 function ExcelExportView({ reports }) {
-  // 기본 날짜: 이번달 1일 ~ 오늘
   const getStartOfMonth = () => {
     const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
   };
@@ -205,25 +204,71 @@ function ExcelExportView({ reports }) {
     }
 
 
-    const headers = ['점검일자', '대분류', '공종', '점검자', '상태', '긴급여부', '상세위치', '사진설명', '비고'];
-    const rows = filtered.map(r => [
-      `"${r.date || ''}"`,
-      `"${r.category || ''}"`,
-      `"${r.trade || ''}"`,
-      `"${r.inspectorName || ''}"`,
-      `"${r.status || ''}"`,
-      `"${r.isEmergency ? '긴급' : '일반'}"`,
-      `"${(r.locationDesc || '').replace(/"/g, '""')}"`,
-      `"${(r.photoDesc || '').replace(/"/g, '""')}"`,
-      `"${(r.remarks || '').replace(/"/g, '""')}"`
-    ]);
+    // HTML 테이블 문자열 생성 (엑셀에서 이미지를 읽을 수 있는 포맷)
+    let tableHtml = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #dddddd; text-align: left; padding: 8px; vertical-align: middle; }
+          th { background-color: #f2f2f2; font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <table>
+          <thead>
+            <tr>
+              <th>점검일자</th>
+              <th>대분류</th>
+              <th>공종</th>
+              <th>점검자</th>
+              <th>상태</th>
+              <th>긴급여부</th>
+              <th>상세위치</th>
+              <th>사진설명</th>
+              <th>비고</th>
+              <th>현장사진</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
 
 
-    const csvContent = "\uFEFF" + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    filtered.forEach(r => {
+      tableHtml += `
+        <tr>
+          <td>${r.date || ''}</td>
+          <td>${r.category || ''}</td>
+          <td>${r.trade || ''}</td>
+          <td>${r.inspectorName || ''}</td>
+          <td>${r.status || ''}</td>
+          <td>${r.isEmergency ? '긴급' : '일반'}</td>
+          <td>${r.locationDesc || ''}</td>
+          <td>${r.photoDesc || ''}</td>
+          <td>${r.remarks || ''}</td>
+          <td style="text-align: center; width: 200px; height: 200px;">
+            ${r.photoBase64 ? `<img src="${r.photoBase64}" width="180" height="180" style="object-fit: contain;" />` : '사진 없음'}
+          </td>
+        </tr>
+      `;
+    });
+
+
+    tableHtml += `
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+
+    // 엑셀(xls) 형식의 Blob 생성 및 다운로드
+    const blob = new Blob([tableHtml], { type: 'application/vnd.ms-excel' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `시설안전관리_점검내역_${startDate}~${endDate}.csv`;
+    // 확장자를 xls로 설정해야 테이블 내 이미지가 인식됩니다.
+    link.download = `시설안전관리_점검내역_${startDate}~${endDate}.xls`;
     link.style.display = "none";
     document.body.appendChild(link);
     link.click();
@@ -236,7 +281,7 @@ function ExcelExportView({ reports }) {
       <div className="flex items-center gap-3 mb-8 border-b pb-6">
         <div className="bg-green-100 p-4 rounded-full"><Icon name="download" size={32} className="text-green-600"/></div>
         <div>
-          <h2 className="text-2xl font-black text-gray-900">엑셀(CSV)로 내보내기</h2>
+          <h2 className="text-2xl font-black text-gray-900">엑셀로 내보내기 (사진 포함)</h2>
           <p className="text-gray-500 font-bold mt-1">원하는 기간을 설정하여 점검 데이터를 다운로드하세요.</p>
         </div>
       </div>
@@ -265,7 +310,7 @@ function ExcelExportView({ reports }) {
 
 
       <button onClick={handleExport} className="w-full bg-green-600 hover:bg-green-700 text-white font-black py-5 rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 text-lg">
-        <Icon name="download" size={24}/> 설정한 기간 데이터 엑셀 다운로드
+        <Icon name="download" size={24}/> 설정한 기간 엑셀 다운로드 (사진 포함)
       </button>
     </div>
   );
@@ -417,15 +462,11 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
 
 
   const submit = async () => {
-    // 🚨 1. 사진만 등록해도 저장되도록 필수 조건 최소화 🚨
     if (!formData.photoBase64) { 
       setError('사진을 반드시 첨부해 주세요.'); return; 
     }
-
-
     setSubmit(true);
     try {
-      // 🚨 제목 칸 삭제 대응: 카테고리와 날짜로 자동 제목 생성 🚨
       const autoTitle = `[${formData.category}] ${formData.locationDesc ? formData.locationDesc + ' 점검' : '점검 내역'}`;
       const data = { ...formData, title: autoTitle, updatedAt: Date.now() };
       delete data.id;
@@ -497,7 +538,7 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
       </div>
       <div className="flex gap-4 mt-8 pt-6 border-t">
         <button onClick={onCancel} className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 font-black rounded-xl transition-colors">취소</button>
-        <button onClick={submit} disabled={isSubmitting} className="flex-[2] py-4 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl disabled:opacity-50 transition-colors shadow-md active:scale-95 flex justify-center items-center gap-2">
+        <button onClick={submit} disabled={isSubmitting !== false} className="flex-[2] py-4 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl disabled:opacity-50 transition-colors shadow-md active:scale-95 flex justify-center items-center gap-2">
           {isSubmitting ? (
             <><Icon name="clock" size={20} className="animate-spin" /> 저장 처리 중...</>
           ) : '저장 완료하기'}
