@@ -15,7 +15,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   
-  <!-- 🚨 완벽한 진짜 엑셀(.xlsx) 생성을 위한 라이브러리 추가 🚨 -->
+  <!-- ExcelJS (엑셀 내보내기용) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
   
   <!-- Lucide Icons -->
@@ -66,10 +66,10 @@ const logsPath = 'dailyLogs';
 const userPath = (uid) => `users/${uid}`;
 
 
-// 대분류
+// 🚨 상태(STATUSES)에 '특이사항없음' 추가 🚨
 const CATEGORIES = ['경기 중 시설 VOC', '일일 화재점검', '일일 안전 및 시설 점검', '긴급화재안전점검(6/2~6/3)'];
 const TRADES = ['전기', '소방', '기계', '건축', '안전'];
-const STATUSES = ['조치 예정', '조치 중', '조치 완료'];
+const STATUSES = ['조치 예정', '조치 중', '조치 완료', '특이사항없음'];
 const LOG_CATEGORIES = ['일일 시설안전 점검', '일일 화재점검'];
 
 
@@ -187,7 +187,7 @@ function RegisterForm({ user, setProfile, setView, showToast }) {
 }
 
 
-// --- 🚨 엑셀로 내보내기 탭 (완벽한 ExcelJS 적용) 🚨 ---
+// --- 엑셀로 내보내기 탭 ---
 function ExcelExportView({ reports }) {
   const getStartOfMonth = () => {
     const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
@@ -222,28 +222,25 @@ function ExcelExportView({ reports }) {
       const sheet = workbook.addWorksheet('점검내역');
 
 
-      // 엑셀 열(Column) 폭 설정
       sheet.columns = [
         { header: '점검일자', key: 'date', width: 15 },
         { header: '대분류', key: 'category', width: 25 },
         { header: '공종', key: 'trade', width: 12 },
         { header: '점검자', key: 'inspectorName', width: 15 },
-        { header: '상태', key: 'status', width: 12 },
+        { header: '상태', key: 'status', width: 15 },
         { header: '긴급여부', key: 'isEmergency', width: 12 },
         { header: '상세위치', key: 'locationDesc', width: 30 },
         { header: '사진설명', key: 'photoDesc', width: 40 },
         { header: '비고', key: 'remarks', width: 30 },
-        { header: '현장사진', key: 'photo', width: 30 } // 이미지가 들어갈 칸
+        { header: '현장사진', key: 'photo', width: 30 } 
       ];
 
 
-      // 헤더 스타일 꾸미기
       sheet.getRow(1).font = { bold: true, size: 12 };
       sheet.getRow(1).alignment = { horizontal: 'center', vertical: 'middle' };
       sheet.getRow(1).height = 30;
 
 
-      // 데이터 삽입
       filtered.forEach((r, index) => {
         const row = sheet.addRow({
           date: r.date || '',
@@ -258,33 +255,28 @@ function ExcelExportView({ reports }) {
         });
 
 
-        // 텍스트 정렬 및 줄바꿈 허용
         row.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
 
 
-        // 🚨 진짜 이미지를 엑셀 파일 내부에 삽입하는 핵심 로직 🚨
         if (r.photoBase64) {
-          row.height = 110; // 사진이 들어갈 행의 높이 확보 (약 146px)
+          row.height = 110; 
 
 
           try {
-            // 이미지 확장자 파싱
             const mimeMatch = r.photoBase64.match(/data:image\/(.*);base64/);
             const ext = mimeMatch ? mimeMatch[1] : 'jpeg';
 
 
-            // 워크북에 이미지 등록
             const imageId = workbook.addImage({
               base64: r.photoBase64,
               extension: ext,
             });
 
 
-            // 셀(J열 = 인덱스 9) 안의 지정된 위치에 이미지 표시
             sheet.addImage(imageId, {
-              tl: { col: 9.1, row: index + 1.1 }, // J열, 약간의 여백
-              ext: { width: 140, height: 140 },  // 사진 크기
-              editAs: 'oneCell'                  // 셀 크기 변경에 따라 크기 조정
+              tl: { col: 9.1, row: index + 1.1 }, 
+              ext: { width: 140, height: 140 },  
+              editAs: 'oneCell'                  
             });
           } catch(e) {
             console.error("이미지 삽입 에러", e);
@@ -296,7 +288,6 @@ function ExcelExportView({ reports }) {
       });
 
 
-      // 진짜 .xlsx 파일로 묶어서 다운로드 트리거
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const link = document.createElement("a");
@@ -601,7 +592,15 @@ function ReportDetail({ report, userProfile, onEdit, onDelete, showToast }) {
           <div className="flex items-center gap-2 mb-3"><span className="text-sm font-black text-blue-700 bg-blue-50 px-3 py-1 rounded-full">{report.category}</span><span className="text-sm font-bold bg-gray-50 border px-3 py-1 rounded-full">{report.trade}</span>{report.isEmergency && <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-black flex items-center gap-1 animate-pulse"><Icon name="alert-circle" size={14}/> 긴급</span>}</div>
           <h2 className="text-2xl md:text-3xl font-black text-gray-900">{report.title}</h2>
         </div>
-        <div className="text-right"><span className={`inline-block px-4 py-2 rounded-full text-sm font-black mb-3 border ${report.status==='조치 완료'?'bg-green-100 text-green-700 border-green-200':report.status==='조치 중'?'bg-yellow-100 text-yellow-700 border-yellow-200':'bg-white text-gray-700 border-gray-300'}`}>{report.status}</span><p className="text-sm font-bold text-gray-500 flex items-center justify-end gap-1"><Icon name="clock" size={14}/> 점검일: {report.date}</p></div>
+        <div className="text-right">
+          <span className={`inline-block px-4 py-2 rounded-full text-sm font-black mb-3 border ${
+            report.status==='조치 완료'?'bg-green-100 text-green-700 border-green-200':
+            report.status==='특이사항없음'?'bg-blue-100 text-blue-700 border-blue-200':
+            report.status==='조치 중'?'bg-yellow-100 text-yellow-700 border-yellow-200':
+            'bg-white text-gray-700 border-gray-300'
+          }`}>{report.status}</span>
+          <p className="text-sm font-bold text-gray-500 flex items-center justify-end gap-1"><Icon name="clock" size={14}/> 점검일: {report.date}</p>
+        </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
         <div><h3 className="text-lg font-black mb-3 flex items-center gap-2"><Icon name="camera" className="text-blue-600"/> 현장 사진</h3>{report.photoBase64 ? <img src={report.photoBase64} className="rounded-xl border max-h-80 w-full object-contain bg-gray-100"/> : <div className="rounded-xl border bg-gray-50 h-80 flex items-center justify-center font-bold text-gray-400">사진 없음</div>}<div className="mt-4"><span className="text-xs font-bold text-gray-500 block mb-2">사진 설명</span><p className="text-sm bg-gray-50 p-4 rounded-xl border font-medium whitespace-pre-wrap">{report.photoDesc}</p></div></div>
@@ -786,10 +785,12 @@ function App() {
 
             {activeTab === 'voc' && (
               <div className="w-full max-w-7xl mx-auto animate-in fade-in duration-300">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                {/* 🚨 상단 현황판(StatusCard) 5칸(특이사항없음 포함)으로 변경 🚨 */}
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
                   <StatusCard title="조치 예정" count={reports.filter(r=>r.status==='조치 예정').length} color="bg-red-50 text-red-700 border-red-200" iconName="alert-circle"/>
                   <StatusCard title="조치 중" count={reports.filter(r=>r.status==='조치 중').length} color="bg-yellow-50 text-yellow-700 border-yellow-200" iconName="clock"/>
                   <StatusCard title="조치 완료" count={reports.filter(r=>r.status==='조치 완료').length} color="bg-green-50 text-green-700 border-green-200" iconName="check-circle"/>
+                  <StatusCard title="특이사항없음" count={reports.filter(r=>r.status==='특이사항없음').length} color="bg-blue-50 text-blue-700 border-blue-200" iconName="shield-check"/>
                   <StatusCard title="긴급 건" count={reports.filter(r=>r.isEmergency).length} color="bg-purple-50 text-purple-700 border-purple-200" iconName="file-warning"/>
                 </div>
 
@@ -842,7 +843,13 @@ function App() {
                             <td className="p-5 text-gray-600 font-bold">{r.inspectorName}</td>
                             <td className="p-5 text-gray-600 font-bold">{r.date}</td>
                             <td className="p-5">
-                              <span className={`px-4 py-1.5 rounded-full text-xs font-black border shadow-sm ${r.status==='조치 완료'?'bg-green-100 text-green-700 border-green-200':r.status==='조치 중'?'bg-yellow-100 text-yellow-700 border-yellow-200':'bg-white text-gray-700 border-gray-300'}`}>{r.status}</span>
+                              {/* 특이사항없음 뱃지 컬러 연동 */}
+                              <span className={`px-4 py-1.5 rounded-full text-xs font-black border shadow-sm ${
+                                r.status==='조치 완료'?'bg-green-100 text-green-700 border-green-200':
+                                r.status==='특이사항없음'?'bg-blue-100 text-blue-700 border-blue-200':
+                                r.status==='조치 중'?'bg-yellow-100 text-yellow-700 border-yellow-200':
+                                'bg-white text-gray-700 border-gray-300'
+                              }`}>{r.status}</span>
                             </td>
                           </tr>
                         ))}
