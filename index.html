@@ -15,6 +15,9 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   
+  <!-- 🚨 완벽한 진짜 엑셀(.xlsx) 생성을 위한 라이브러리 추가 🚨 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+  
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
   
@@ -184,7 +187,7 @@ function RegisterForm({ user, setProfile, setView, showToast }) {
 }
 
 
-// --- 엑셀로 내보내기 탭 (이미지 포함 버전으로 수정됨) ---
+// --- 🚨 엑셀로 내보내기 탭 (완벽한 ExcelJS 적용) 🚨 ---
 function ExcelExportView({ reports }) {
   const getStartOfMonth = () => {
     const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
@@ -194,9 +197,16 @@ function ExcelExportView({ reports }) {
 
   const [startDate, setStartDate] = useState(getStartOfMonth());
   const [endDate, setEndDate] = useState(getToday());
+  const [isExporting, setIsExporting] = useState(false);
 
 
-  const handleExport = () => {
+  const handleExport = async () => {
+    if (!window.ExcelJS) {
+      alert("엑셀 라이브러리를 불러오는 중입니다. 잠시 후 다시 시도해주세요.");
+      return;
+    }
+
+
     const filtered = reports.filter(r => r.date >= startDate && r.date <= endDate);
     if (filtered.length === 0) {
       alert('해당 기간에 등록된 시설안전관리 점검 데이터가 없습니다.');
@@ -204,85 +214,116 @@ function ExcelExportView({ reports }) {
     }
 
 
-    // HTML 테이블 문자열 생성 (엑셀에서 이미지를 읽을 수 있는 포맷)
-    let tableHtml = `
-      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-      <head>
-        <meta charset="utf-8" />
-        <style>
-          table { border-collapse: collapse; width: 100%; }
-          th, td { border: 1px solid #dddddd; text-align: left; padding: 8px; vertical-align: middle; }
-          th { background-color: #f2f2f2; font-weight: bold; }
-        </style>
-      </head>
-      <body>
-        <table>
-          <thead>
-            <tr>
-              <th>점검일자</th>
-              <th>대분류</th>
-              <th>공종</th>
-              <th>점검자</th>
-              <th>상태</th>
-              <th>긴급여부</th>
-              <th>상세위치</th>
-              <th>사진설명</th>
-              <th>비고</th>
-              <th>현장사진</th>
-            </tr>
-          </thead>
-          <tbody>
-    `;
+    setIsExporting(true);
 
 
-    filtered.forEach(r => {
-      tableHtml += `
-        <tr>
-          <td>${r.date || ''}</td>
-          <td>${r.category || ''}</td>
-          <td>${r.trade || ''}</td>
-          <td>${r.inspectorName || ''}</td>
-          <td>${r.status || ''}</td>
-          <td>${r.isEmergency ? '긴급' : '일반'}</td>
-          <td>${r.locationDesc || ''}</td>
-          <td>${r.photoDesc || ''}</td>
-          <td>${r.remarks || ''}</td>
-          <td style="text-align: center; width: 200px; height: 200px;">
-            ${r.photoBase64 ? `<img src="${r.photoBase64}" width="180" height="180" style="object-fit: contain;" />` : '사진 없음'}
-          </td>
-        </tr>
-      `;
-    });
+    try {
+      const workbook = new window.ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('점검내역');
 
 
-    tableHtml += `
-          </tbody>
-        </table>
-      </body>
-      </html>
-    `;
+      // 엑셀 열(Column) 폭 설정
+      sheet.columns = [
+        { header: '점검일자', key: 'date', width: 15 },
+        { header: '대분류', key: 'category', width: 25 },
+        { header: '공종', key: 'trade', width: 12 },
+        { header: '점검자', key: 'inspectorName', width: 15 },
+        { header: '상태', key: 'status', width: 12 },
+        { header: '긴급여부', key: 'isEmergency', width: 12 },
+        { header: '상세위치', key: 'locationDesc', width: 30 },
+        { header: '사진설명', key: 'photoDesc', width: 40 },
+        { header: '비고', key: 'remarks', width: 30 },
+        { header: '현장사진', key: 'photo', width: 30 } // 이미지가 들어갈 칸
+      ];
 
 
-    // 엑셀(xls) 형식의 Blob 생성 및 다운로드
-    const blob = new Blob([tableHtml], { type: 'application/vnd.ms-excel' });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    // 확장자를 xls로 설정해야 테이블 내 이미지가 인식됩니다.
-    link.download = `시설안전관리_점검내역_${startDate}~${endDate}.xls`;
-    link.style.display = "none";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      // 헤더 스타일 꾸미기
+      sheet.getRow(1).font = { bold: true, size: 12 };
+      sheet.getRow(1).alignment = { horizontal: 'center', vertical: 'middle' };
+      sheet.getRow(1).height = 30;
+
+
+      // 데이터 삽입
+      filtered.forEach((r, index) => {
+        const row = sheet.addRow({
+          date: r.date || '',
+          category: r.category || '',
+          trade: r.trade || '',
+          inspectorName: r.inspectorName || '',
+          status: r.status || '',
+          isEmergency: r.isEmergency ? '🚨 긴급' : '일반',
+          locationDesc: r.locationDesc || '',
+          photoDesc: r.photoDesc || '',
+          remarks: r.remarks || ''
+        });
+
+
+        // 텍스트 정렬 및 줄바꿈 허용
+        row.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+
+
+        // 🚨 진짜 이미지를 엑셀 파일 내부에 삽입하는 핵심 로직 🚨
+        if (r.photoBase64) {
+          row.height = 110; // 사진이 들어갈 행의 높이 확보 (약 146px)
+
+
+          try {
+            // 이미지 확장자 파싱
+            const mimeMatch = r.photoBase64.match(/data:image\/(.*);base64/);
+            const ext = mimeMatch ? mimeMatch[1] : 'jpeg';
+
+
+            // 워크북에 이미지 등록
+            const imageId = workbook.addImage({
+              base64: r.photoBase64,
+              extension: ext,
+            });
+
+
+            // 셀(J열 = 인덱스 9) 안의 지정된 위치에 이미지 표시
+            sheet.addImage(imageId, {
+              tl: { col: 9.1, row: index + 1.1 }, // J열, 약간의 여백
+              ext: { width: 140, height: 140 },  // 사진 크기
+              editAs: 'oneCell'                  // 셀 크기 변경에 따라 크기 조정
+            });
+          } catch(e) {
+            console.error("이미지 삽입 에러", e);
+            row.getCell(10).value = "이미지 오류";
+          }
+        } else {
+          row.getCell(10).value = "사진 없음";
+        }
+      });
+
+
+      // 진짜 .xlsx 파일로 묶어서 다운로드 트리거
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `시설안전관리_점검내역_${startDate}~${endDate}.xlsx`;
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+
+    } catch (e) {
+      console.error(e);
+      alert("엑셀 변환 중 오류가 발생했습니다.");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 md:p-10 w-full max-w-4xl mx-auto mt-6 animate-in fade-in duration-300">
       <div className="flex items-center gap-3 mb-8 border-b pb-6">
-        <div className="bg-green-100 p-4 rounded-full"><Icon name="download" size={32} className="text-green-600"/></div>
+        <div className="bg-green-100 p-4 rounded-full"><Icon name="file-spreadsheet" size={32} className="text-green-600"/></div>
         <div>
-          <h2 className="text-2xl font-black text-gray-900">엑셀로 내보내기 (사진 포함)</h2>
-          <p className="text-gray-500 font-bold mt-1">원하는 기간을 설정하여 점검 데이터를 다운로드하세요.</p>
+          <h2 className="text-2xl font-black text-gray-900">엑셀(.xlsx)로 내보내기</h2>
+          <p className="text-gray-500 font-bold mt-1">엑스박스 없이 완벽하게 사진이 내장된 엑셀 파일을 다운로드합니다.</p>
         </div>
       </div>
 
@@ -309,8 +350,8 @@ function ExcelExportView({ reports }) {
       </div>
 
 
-      <button onClick={handleExport} className="w-full bg-green-600 hover:bg-green-700 text-white font-black py-5 rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 text-lg">
-        <Icon name="download" size={24}/> 설정한 기간 엑셀 다운로드 (사진 포함)
+      <button onClick={handleExport} disabled={isExporting} className="w-full bg-green-600 hover:bg-green-700 text-white font-black py-5 rounded-xl shadow-md transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 text-lg">
+        {isExporting ? <><Icon name="clock" size={24} className="animate-spin" /> 파일 생성 중...</> : <><Icon name="download" size={24}/> 설정한 기간 데이터 엑셀 다운로드</>}
       </button>
     </div>
   );
@@ -572,7 +613,6 @@ function ReportDetail({ report, userProfile, onEdit, onDelete, showToast }) {
       </div>
       {report.remarks && <div className="mb-8"><h3 className="text-sm font-black mb-2">비고</h3><p className="bg-white p-4 rounded-xl border font-medium whitespace-pre-wrap">{report.remarks}</p></div>}
       
-      {/* 누구나 수정 및 삭제 가능 */}
       <div className="flex gap-3 pt-6 border-t justify-end">
         <button onClick={onEdit} className="px-6 py-3 bg-blue-50 text-blue-700 font-black rounded-xl flex gap-2 hover:bg-blue-100 transition-colors"><Icon name="edit" size={18}/> 수정</button>
         <button onClick={() => setShowConfirm(true)} className="px-6 py-3 bg-red-50 text-red-700 font-black rounded-xl flex gap-2 hover:bg-red-100 transition-colors"><Icon name="trash-2" size={18}/> 삭제</button>
@@ -602,7 +642,6 @@ function App() {
   const toast = (msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 5000); };
 
 
-  // 초기 인증 로직
   useEffect(() => {
     let isResolved = false;
     const fallbackTimer = setTimeout(() => {
@@ -675,7 +714,6 @@ function App() {
   }, [user, userProfile]);
 
 
-  // 에러 화면
   if (view === 'error') return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-lg w-full text-center border-t-8 border-red-500">
@@ -688,7 +726,6 @@ function App() {
   );
 
 
-  // 로딩 화면
   if (view === 'loading') return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-gray-500">
       <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-blue-500 border-solid mb-4"></div>
@@ -697,11 +734,9 @@ function App() {
   );
 
 
-  // 등록 화면
   if (view === 'register') return <RegisterForm user={user} setProfile={setUserProfile} setView={setView} showToast={toast} />;
 
 
-  // 필터링 적용
   const filtered = reports.filter(r => {
     const matchSearch = (r.title || '').includes(searchTerm) || (r.locationDesc || '').includes(searchTerm);
     const matchStatus = statusFilter ? r.status === statusFilter : true;
@@ -744,7 +779,7 @@ function App() {
                 <Icon name="calendar" size={18}/> 일일 점검일지
               </button>
               <button onClick={() => setActiveTab('excel')} className={`px-6 py-3 rounded-xl text-sm font-black flex items-center gap-2 transition-all ${activeTab==='excel'?'bg-green-600 text-white shadow-md':'text-gray-500 hover:bg-gray-100'}`}>
-                <Icon name="download" size={18}/> 엑셀로 내보내기
+                <Icon name="file-spreadsheet" size={18}/> 엑셀로 내보내기
               </button>
             </div>
 
