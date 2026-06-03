@@ -232,15 +232,15 @@ function ExcelExportView({ reports }) {
 
 
       sheet.columns = [
-        { header: '점검일자', key: 'date', width: 15 },
-        { header: '대분류', key: 'category', width: 25 },
-        { header: '공종', key: 'trade', width: 12 },
-        { header: '점검자', key: 'inspectorName', width: 15 },
-        { header: '상태', key: 'status', width: 15 },
-        { header: '현장사진', key: 'photo', width: 30 },
-        { header: '상세위치', key: 'locationDesc', width: 30 },
-        { header: '사진설명', key: 'photoDesc', width: 40 },
-        { header: '비고', key: 'remarks', width: 30 }
+        { header: '점검일자', key: 'date', width: 15 },           // 1
+        { header: '대분류', key: 'category', width: 25 },       // 2
+        { header: '공종', key: 'trade', width: 12 },            // 3
+        { header: '점검자', key: 'inspectorName', width: 15 },  // 4
+        { header: '상태', key: 'status', width: 15 },           // 5
+        { header: '현장사진', key: 'photo', width: 30 },        // 6
+        { header: '상세위치', key: 'locationDesc', width: 30 }, // 7
+        { header: '사진설명', key: 'photoDesc', width: 40 },    // 8
+        { header: '비고', key: 'remarks', width: 30 }           // 9
       ];
 
 
@@ -497,7 +497,8 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
     setSubmit(true);
     try {
       const autoTitle = `[${formData.category}] ${formData.locationDesc ? formData.locationDesc + ' 점검' : '점검 내역'}`;
-      const data = { ...formData, title: autoTitle, updatedAt: Date.now() };
+      const isEmerg = formData.status === '긴급';
+      const data = { ...formData, title: autoTitle, isEmergency: isEmerg, updatedAt: Date.now() };
       delete data.id;
 
 
@@ -633,12 +634,46 @@ function App() {
   const [authError, setAuthError] = useState('');
   const [toastMsg, setToastMsg] = useState('');
   
+  // 🚨 검색 기능에 사용할 상태값들 🚨
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState(''); // 🚨 대분류 필터 상태 추가
+  const [categoryFilter, setCategoryFilter] = useState('');
+  
+  // 입력 필드값을 저장했다가 '검색' 버튼 누를 때만 적용하기 위한 임시 상태
+  const [tempSearchTerm, setTempSearchTerm] = useState('');
+  const [tempStatusFilter, setTempStatusFilter] = useState('');
+  const [tempCategoryFilter, setTempCategoryFilter] = useState('');
 
 
   const toast = (msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 5000); };
+
+
+  // 🚨 검색 실행 함수 🚨
+  const handleSearch = () => {
+    setSearchTerm(tempSearchTerm);
+    setStatusFilter(tempStatusFilter);
+    setCategoryFilter(tempCategoryFilter);
+  };
+
+
+  const handleMigration = async () => {
+    if (!window.confirm("데이터베이스의 모든 '조치 예정' 글들을 '조치 대기'로 일괄 변경하시겠습니까?")) return;
+    try {
+      const snap = await db.collection(reportsPath).where('status', '==', '조치 예정').get();
+      if (snap.empty) {
+        alert("변경할 데이터가 없습니다 (이미 모두 수정됨).");
+        return;
+      }
+      const batch = db.batch();
+      snap.docs.forEach(doc => {
+        batch.update(doc.ref, { status: '조치 대기' });
+      });
+      await batch.commit();
+      alert(`총 ${snap.size}개의 데이터가 '조치 대기'로 성공적으로 업데이트 되었습니다!`);
+    } catch(e) {
+      alert("업데이트 중 오류 발생: " + e.message);
+    }
+  };
 
 
   useEffect(() => {
@@ -693,11 +728,9 @@ function App() {
   }, []);
 
 
-  // 6개월 데이터 완전 삭제 로직 (이중 방어 처리됨)
   useEffect(() => {
     if (!user || !userProfile) return;
     
-    // 정확히 180일에 해당하는 밀리초 (15552000000ms)
     const sixMonthsMs = 15552000000;
 
 
@@ -759,7 +792,7 @@ function App() {
   if (view === 'register') return <RegisterForm user={user} setProfile={setUserProfile} setView={setView} showToast={toast} />;
 
 
-  // 🚨 대분류, 상태별 필터링 기능 추가 🚨
+  // 🚨 필터 적용 (검색 버튼을 눌렀을 때의 상태값으로 필터링) 🚨
   const filtered = reports.filter(r => {
     const matchSearch = (r.title || '').includes(searchTerm) || (r.locationDesc || '').includes(searchTerm);
     const matchStatus = statusFilter ? r.status === statusFilter : true;
@@ -817,25 +850,40 @@ function App() {
                 </div>
 
 
-                {/* 🚨 필터(검색) 영역: 진행상태와 대분류 선택창 동시 표시 🚨 */}
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex flex-col xl:flex-row gap-4 items-center justify-between mb-6">
-                  <div className="flex flex-wrap gap-2 w-full xl:w-auto">
-                    <select className="p-3 border border-gray-300 rounded-xl bg-gray-50 outline-none text-sm font-bold flex-1 sm:flex-none" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                {/* 🚨 새로운 검색창 UI 영역: 입력 내용과 검색 버튼으로 구성 🚨 */}
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex flex-col lg:flex-row gap-4 items-center justify-between mb-6">
+                  <div className="flex flex-wrap lg:flex-nowrap gap-2 w-full lg:w-auto flex-1">
+                    <select className="p-3 border border-gray-300 rounded-xl bg-gray-50 outline-none text-sm font-bold w-full sm:w-auto min-w-[140px]" 
+                            value={tempStatusFilter} onChange={e => setTempStatusFilter(e.target.value)}>
                       <option value="">진행상태 전체</option>
                       {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                     
-                    <select className="p-3 border border-gray-300 rounded-xl bg-gray-50 outline-none text-sm font-bold flex-1 sm:flex-none max-w-[200px]" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+                    <select className="p-3 border border-gray-300 rounded-xl bg-gray-50 outline-none text-sm font-bold w-full sm:w-auto min-w-[140px]" 
+                            value={tempCategoryFilter} onChange={e => setTempCategoryFilter(e.target.value)}>
                       <option value="">대분류 전체</option>
                       {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
-                  </div>
-                  <div className="flex gap-2 w-full xl:w-auto">
-                    <div className="relative flex-1 xl:w-80">
+
+
+                    <div className="relative flex-1 min-w-[200px] w-full">
                       <Icon name="search" size={18} className="absolute left-4 top-3.5 text-gray-400 pointer-events-none"/>
-                      <input type="text" placeholder="제목/위치 검색..." className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl bg-gray-50 outline-none text-sm font-bold" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                      <input type="text" placeholder="제목/상세위치 검색 (빈칸으로 검색 가능)" 
+                             className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl bg-gray-50 outline-none text-sm font-bold" 
+                             value={tempSearchTerm} 
+                             onChange={e => setTempSearchTerm(e.target.value)} 
+                             onKeyDown={e => { if(e.key === 'Enter') handleSearch(); }} />
                     </div>
-                    <button onClick={() => { setSelected(null); setView('form'); }} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-black shrink-0 shadow-md transition-transform hover:scale-[1.02] active:scale-95">
+
+
+                    <button onClick={handleSearch} className="bg-slate-700 hover:bg-slate-800 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-md transition-transform hover:scale-[1.02] active:scale-95 w-full sm:w-auto shrink-0">
+                      <Icon name="search" size={18}/> 검색
+                    </button>
+                  </div>
+
+
+                  <div className="w-full lg:w-auto shrink-0 border-t lg:border-t-0 pt-4 lg:pt-0 border-gray-100 flex justify-end">
+                    <button onClick={() => { setSelected(null); setView('form'); }} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-md transition-transform hover:scale-[1.02] active:scale-95 w-full sm:w-auto">
                       <Icon name="plus" size={18}/> 신규 등록
                     </button>
                   </div>
@@ -883,6 +931,16 @@ function App() {
                       </tbody>
                     </table>
                   </div>
+                </div>
+                
+                <div className="mt-8 p-4 bg-gray-100 rounded-xl flex flex-col md:flex-row items-center justify-between border border-gray-200 gap-4">
+                  <div className="text-sm text-gray-600 font-bold flex items-center">
+                    <Icon name="info" size={18} className="text-blue-500 mr-2" />
+                    [시스템 관리] 예전에 등록했던 글 중 상태가 '조치 예정'인 데이터를 '조치 대기'로 호환 업데이트 합니다.
+                  </div>
+                  <button onClick={handleMigration} className="px-5 py-2.5 bg-slate-700 text-white text-sm font-bold rounded-xl shadow hover:bg-slate-800 transition-colors whitespace-nowrap">
+                    일괄 업데이트 실행
+                  </button>
                 </div>
 
 
