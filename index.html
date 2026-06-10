@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
@@ -32,7 +32,6 @@
 <body>
   <div id="root"></div>
 
-
 <script>
   // 1. Firebase 초기화 설정
   const firebaseConfig = {
@@ -52,25 +51,30 @@
   window.__fbDb = firebase.firestore();
 </script>
 
-
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
-
 
 const auth = window.__fbAuth;
 const db   = window.__fbDb;
 
-
 const reportsPath = 'reports';
 const logsPath = 'dailyLogs';
+const constLogsPath = 'constructionLogs';
 const userPath = (uid) => `users/${uid}`;
-
 
 const CATEGORIES = ['경기 중 시설 VOC', '일일 화재점검', '일일 안전 및 시설 점검', '긴급화재안전점검(6/2~6/3)', '행사 점검'];
 const TRADES = ['전기', '소방', '기계', '건축', '안전'];
 const STATUSES = ['조치 대기', '조치 중', '조치 완료', '이상없음', '긴급'];
 const LOG_CATEGORIES = ['일일 시설안전 점검', '일일 화재점검'];
+const FLOORS = ['지상', '지하 1층', '지하 2층', '지하 3층', '지하 4층'];
 
+const FLOOR_IMAGES = {
+  '지상': './images/map_ground.png',
+  '지하 1층': './images/map_b1.png',
+  '지하 2층': './images/map_b2.png',
+  '지하 3층': './images/map_b3.png',
+  '지하 4층': './images/map_b4.png',
+};
 
 // --- 아이콘 컴포넌트 ---
 function Icon({ name, size = 24, className = '' }) {
@@ -82,7 +86,6 @@ function Icon({ name, size = 24, className = '' }) {
   }, [name, size, className]);
   return <span ref={ref} className={`inline-flex items-center justify-center ${className}`}><i data-lucide={name} style={{width: size, height: size}}></i></span>;
 }
-
 
 // --- 공용 모달 컴포넌트 ---
 function ConfirmModal({ title, message, onConfirm, onCancel }) {
@@ -103,13 +106,22 @@ function ConfirmModal({ title, message, onConfirm, onCancel }) {
   );
 }
 
+// --- 층별 도면 뷰어 ---
+function FloorPlanMap({ floor, location, onChange }) {
+  const imageUrl = FLOOR_IMAGES[floor] || FLOOR_IMAGES['지상'];
 
-// --- 구글맵 위성지도 뷰어 ---
-function GoogleImageMap({ location, onChange }) {
   return (
-    <div className="relative w-full h-[400px] bg-[#e5e5e5] rounded-xl overflow-hidden shadow-inner group select-none cursor-crosshair border border-gray-300">
-      <iframe src="https://maps.google.com/maps?q=인천+문학경기장&t=k&z=15&output=embed" width="100%" height="100%" frameBorder="0" style={{ border: 0, pointerEvents: 'none' }} allowFullScreen aria-hidden="false" tabIndex="-1"></iframe>
-      <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors z-10" onClick={(e) => {
+    <div className="relative w-full h-[400px] bg-slate-100 rounded-xl overflow-hidden shadow-inner group select-none cursor-crosshair border border-gray-300 flex items-center justify-center">
+      <img 
+        src={imageUrl} 
+        alt={`${floor} 도면`} 
+        className="w-full h-full object-contain pointer-events-none" 
+        onError={(e) => { 
+          e.target.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9IiNlNWU1ZTUiLz48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1zaXplPSIyMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzk5OSI+7J2066+47KeAIOyXhuCdmCjGjOydvOydhCDtmZXtnaXtlbTso8jsl5QpPC90ZXh0Pjwvc3ZnPg=='; 
+        }} 
+      />
+      
+      <div className="absolute inset-0 bg-black/0 hover:bg-black/5 transition-colors z-10" onClick={(e) => {
           if (!onChange) return;
           const rect = e.currentTarget.getBoundingClientRect();
           onChange({ x: ((e.clientX - rect.left) / rect.width) * 100, y: ((e.clientY - rect.top) / rect.height) * 100 });
@@ -120,15 +132,17 @@ function GoogleImageMap({ location, onChange }) {
           </span>
         )}
         {!location && onChange && (
-          <div className="absolute top-4 left-4 bg-black/80 text-white text-sm font-bold px-4 py-2.5 rounded-lg shadow-md opacity-0 group-hover:opacity-100 pointer-events-none">
-            지도의 원하는 위치를 클릭하여 핀을 꽂아주세요.
+          <div className="absolute top-4 left-4 bg-black/80 text-white text-sm font-bold px-4 py-2.5 rounded-lg shadow-md opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
+            도면의 원하는 위치를 클릭하여 핀을 꽂아주세요.
           </div>
         )}
+      </div>
+      <div className="absolute bottom-4 right-4 bg-white/90 backdrop-blur border border-gray-200 text-slate-800 text-sm font-black px-4 py-2 rounded-lg shadow-sm z-0 pointer-events-none">
+        현재 선택된 층: {floor}
       </div>
     </div>
   );
 }
-
 
 function StatusCard({ title, count, color, iconName }) {
   return (
@@ -142,13 +156,11 @@ function StatusCard({ title, count, color, iconName }) {
   );
 }
 
-
 // --- 사용자 등록 컴포넌트 ---
 function RegisterForm({ user, setProfile, setView, showToast }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
-
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -161,7 +173,6 @@ function RegisterForm({ user, setProfile, setView, showToast }) {
     } catch (err) { showToast('가입 중 오류가 발생했습니다.'); }
     finally { setLoading(false); }
   };
-
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
@@ -185,7 +196,6 @@ function RegisterForm({ user, setProfile, setView, showToast }) {
   );
 }
 
-
 // --- 엑셀로 내보내기 탭 ---
 function ExcelExportView({ reports }) {
   const getSixMonthsAgo = () => {
@@ -196,13 +206,11 @@ function ExcelExportView({ reports }) {
   };
   const getToday = () => new Date().toISOString().split('T')[0];
 
-
   const [startDate, setStartDate] = useState(getStartOfMonth());
   const [endDate, setEndDate] = useState(getToday());
   const [isExporting, setIsExporting] = useState(false);
   
   const sixMonthsLimit = getSixMonthsAgo();
-
 
   const handleExport = async () => {
     if (!window.ExcelJS) {
@@ -215,21 +223,17 @@ function ExcelExportView({ reports }) {
       return;
     }
 
-
     const filtered = reports.filter(r => r.date >= startDate && r.date <= endDate);
     if (filtered.length === 0) {
       alert('해당 기간에 등록된 시설안전관리 점검 데이터가 없습니다.');
       return;
     }
 
-
     setIsExporting(true);
-
 
     try {
       const workbook = new window.ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('점검내역');
-
 
       sheet.columns = [
         { header: '점검일자', key: 'date', width: 15 },           // 1
@@ -237,17 +241,18 @@ function ExcelExportView({ reports }) {
         { header: '공종', key: 'trade', width: 12 },            // 3
         { header: '점검자', key: 'inspectorName', width: 15 },  // 4
         { header: '상태', key: 'status', width: 15 },           // 5
-        { header: '현장사진', key: 'photo', width: 30 },        // 6
-        { header: '상세위치', key: 'locationDesc', width: 30 }, // 7
-        { header: '사진설명', key: 'photoDesc', width: 40 },    // 8
-        { header: '비고', key: 'remarks', width: 30 }           // 9
+        { header: '현장사진1', key: 'photo1', width: 25 },       // 6
+        { header: '현장사진2', key: 'photo2', width: 25 },       // 7
+        { header: '현장사진3', key: 'photo3', width: 25 },       // 8
+        { header: '층수', key: 'floor', width: 12 },            // 9
+        { header: '상세위치', key: 'locationDesc', width: 30 }, // 10
+        { header: '사진설명', key: 'photoDesc', width: 40 },    // 11
+        { header: '비고', key: 'remarks', width: 30 }           // 12
       ];
-
 
       sheet.getRow(1).font = { bold: true, size: 12 };
       sheet.getRow(1).alignment = { horizontal: 'center', vertical: 'middle' };
       sheet.getRow(1).height = 30;
-
 
       filtered.forEach((r, index) => {
         const row = sheet.addRow({
@@ -256,34 +261,41 @@ function ExcelExportView({ reports }) {
           trade: r.trade || '',
           inspectorName: r.inspectorName || '',
           status: r.status || '',
+          floor: r.floor || '지상',
           locationDesc: r.locationDesc || '',
           photoDesc: r.photoDesc || '',
           remarks: r.remarks || ''
         });
 
-
         row.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
 
-
-        if (r.photoBase64) {
-          row.height = 110; 
-          try {
-            const mimeMatch = r.photoBase64.match(/data:image\/(.*);base64/);
-            const ext = mimeMatch ? mimeMatch[1] : 'jpeg';
-            const imageId = workbook.addImage({ base64: r.photoBase64, extension: ext });
-            sheet.addImage(imageId, {
-              tl: { col: 5.1, row: index + 1.1 }, 
-              ext: { width: 140, height: 140 },  
-              editAs: 'oneCell'                  
-            });
-          } catch(e) {
-            row.getCell(6).value = "이미지 오류";
-          }
+        const photos = r.photos || (r.photoBase64 ? [r.photoBase64] : []);
+        
+        if (photos.length > 0) {
+          row.height = 130; 
+          photos.forEach((p, pIdx) => {
+            if (pIdx > 2) return; // 최대 3장
+            try {
+              const mimeMatch = p.match(/data:image\/(.*);base64/);
+              const ext = mimeMatch ? mimeMatch[1] : 'jpeg';
+              const imageId = workbook.addImage({ base64: p, extension: ext });
+              
+              // 6, 7, 8번째 컬럼 (인덱스는 5, 6, 7)
+              const colOffset = 5.1 + pIdx;
+              
+              sheet.addImage(imageId, {
+                tl: { col: colOffset, row: index + 1.1 }, 
+                ext: { width: 150, height: 150 },  
+                editAs: 'oneCell'                  
+              });
+            } catch(e) {
+              row.getCell(6 + pIdx).value = "이미지 오류";
+            }
+          });
         } else {
           row.getCell(6).value = "사진 없음";
         }
       });
-
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -295,7 +307,6 @@ function ExcelExportView({ reports }) {
       link.click();
       document.body.removeChild(link);
 
-
     } catch (e) {
       console.error(e);
       alert("엑셀 변환 중 오류가 발생했습니다.");
@@ -303,7 +314,6 @@ function ExcelExportView({ reports }) {
       setIsExporting(false);
     }
   };
-
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 md:p-10 w-full max-w-4xl mx-auto mt-6 animate-in fade-in duration-300">
@@ -314,7 +324,6 @@ function ExcelExportView({ reports }) {
           <p className="text-gray-500 font-bold mt-1">원하는 기간을 설정하여 점검 데이터를 다운로드하세요. (최대 6개월)</p>
         </div>
       </div>
-
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div>
@@ -327,7 +336,6 @@ function ExcelExportView({ reports }) {
         </div>
       </div>
 
-
       <div className="flex gap-3 mb-8">
         <button onClick={() => {
           const d = new Date(); const day = d.getDay(); const diff = d.getDate() - day + (day === 0 ? -6 : 1);
@@ -337,14 +345,12 @@ function ExcelExportView({ reports }) {
         <button onClick={() => { setStartDate(getStartOfMonth()); setEndDate(getToday()); }} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-bold text-gray-700 transition-colors">이번 달</button>
       </div>
 
-
       <button onClick={handleExport} disabled={isExporting} className="w-full bg-green-600 hover:bg-green-700 text-white font-black py-5 rounded-xl shadow-md transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 text-lg">
         {isExporting ? <><Icon name="clock" size={24} className="animate-spin" /> 파일 생성 중...</> : <><Icon name="download" size={24}/> 설정한 기간 데이터 엑셀 다운로드</>}
       </button>
     </div>
   );
 }
-
 
 // --- 일일 점검일지 (캘린더) 컴포넌트 ---
 function CalendarView({ logs, userProfile, showToast }) {
@@ -358,16 +364,13 @@ function CalendarView({ logs, userProfile, showToast }) {
   const [formError, setFormError] = useState('');
   const [deleteTargetId, setDeleteTargetId] = useState(null);
 
-
   const year = currentDate.getFullYear(); const month = currentDate.getMonth();
   const fmt = (y, m, d) => `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
   const todayStr = fmt(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
 
-
   const cells = [];
   for (let i = 0; i < new Date(year, month, 1).getDay(); i++) cells.push(null);
   for (let i = 1; i <= new Date(year, month+1, 0).getDate(); i++) cells.push(i);
-
 
   const handleDayClick = (day) => {
     if (!day) return;
@@ -375,7 +378,6 @@ function CalendarView({ logs, userProfile, showToast }) {
     setCategory(LOG_CATEGORIES[0]); setLocation(''); setInspectorName(userProfile.name); setFormError('');
     setIsModalOpen(true);
   };
-
 
   const handleSaveLog = async () => {
     if (!location.trim() || !inspectorName.trim()) { setFormError('위치와 점검자를 입력해주세요.'); return; }
@@ -387,12 +389,10 @@ function CalendarView({ logs, userProfile, showToast }) {
     finally { setIsSubmitting(false); }
   };
 
-
   const deleteLog = async () => {
     try { await db.collection(logsPath).doc(deleteTargetId).delete(); showToast('삭제되었습니다.'); } catch { showToast('삭제 오류'); }
     setDeleteTargetId(null);
   };
-
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 md:p-8 w-full animate-in fade-in duration-300">
@@ -405,11 +405,9 @@ function CalendarView({ logs, userProfile, showToast }) {
         <button onClick={() => setCurrentDate(new Date())} className="px-4 py-2.5 bg-slate-100 font-bold rounded-xl text-sm whitespace-nowrap shrink-0">오늘로 이동</button>
       </div>
 
-
       <div className="grid grid-cols-7 gap-px bg-gray-200 border rounded-t-xl overflow-hidden">
         {['일','월','화','수','목','금','토'].map((d,i) => <div key={d} className={`bg-slate-50 py-3 text-center text-base font-black ${i===0?'text-red-600':i===6?'text-blue-600':'text-slate-700'}`}>{d}</div>)}
       </div>
-
 
       <div className="grid grid-cols-7 gap-px bg-gray-200 border-x border-b rounded-b-xl min-h-[700px] w-full">
         {cells.map((day, idx) => {
@@ -440,7 +438,6 @@ function CalendarView({ logs, userProfile, showToast }) {
         })}
       </div>
 
-
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
@@ -463,44 +460,68 @@ function CalendarView({ logs, userProfile, showToast }) {
   );
 }
 
-
 // --- 시설안전관리 신규 등록 및 수정 컴포넌트 ---
 function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) {
-  const [formData, setFormData] = useState(existingData || {
+  const initialData = existingData ? {
+    ...existingData,
+    photos: existingData.photos || (existingData.photoBase64 ? [existingData.photoBase64] : [])
+  } : {
     category: CATEGORIES[0], trade: TRADES[0], inspectorName: userProfile.name, inspectorEmail: userProfile.email, inspectorUid: userProfile.uid,
-    date: new Date().toISOString().split('T')[0], status: STATUSES[0], photoBase64: '', photoDesc: '', location: null, locationDesc: '', remarks: ''
-  });
+    date: new Date().toISOString().split('T')[0], status: STATUSES[0], 
+    photos: [], photoDesc: '', floor: '지상', location: null, locationDesc: '', remarks: ''
+  };
+
+  const [formData, setFormData] = useState(initialData);
   const [error, setError] = useState(''); 
   const [isSubmitting, setSubmit] = useState(false);
   const set = (f, v) => { setFormData(p => ({...p, [f]: v})); if(error) setError(''); };
 
-
-  const uploadImage = (e) => {
-    const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const img = new Image(); img.src = ev.target.result;
-      img.onload = () => {
-        const cvs = document.createElement('canvas'); const scale = img.width > 800 ? 800/img.width : 1;
-        cvs.width = img.width * scale; cvs.height = img.height * scale;
-        cvs.getContext('2d').drawImage(img, 0, 0, cvs.width, cvs.height);
-        set('photoBase64', cvs.toDataURL('image/jpeg', 0.7));
-      };
-    }; reader.readAsDataURL(file);
+  const handleFloorChange = (e) => {
+    setFormData(p => ({ ...p, floor: e.target.value, location: null }));
   };
 
+  const uploadImages = (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    
+    const availableSlots = 3 - formData.photos.length;
+    const filesToProcess = files.slice(0, availableSlots);
+
+    if (files.length > availableSlots) {
+      showToast('사진은 최대 3장까지만 첨부할 수 있습니다.');
+    }
+
+    filesToProcess.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const img = new Image(); img.src = ev.target.result;
+        img.onload = () => {
+          const cvs = document.createElement('canvas'); const scale = img.width > 800 ? 800/img.width : 1;
+          cvs.width = img.width * scale; cvs.height = img.height * scale;
+          cvs.getContext('2d').drawImage(img, 0, 0, cvs.width, cvs.height);
+          const base64 = cvs.toDataURL('image/jpeg', 0.7);
+          setFormData(p => ({ ...p, photos: [...(p.photos || []), base64] }));
+          if(error) setError('');
+        };
+      }; reader.readAsDataURL(file);
+    });
+  };
+
+  const removePhoto = (index) => {
+    setFormData(p => ({ ...p, photos: p.photos.filter((_, i) => i !== index) }));
+  };
 
   const submit = async () => {
-    if (!formData.photoBase64) { 
-      setError('사진을 반드시 첨부해 주세요.'); return; 
+    if (!formData.photos || formData.photos.length === 0) { 
+      setError('현장 사진을 1장 이상 첨부해 주세요.'); return; 
     }
     setSubmit(true);
     try {
       const autoTitle = `[${formData.category}] ${formData.locationDesc ? formData.locationDesc + ' 점검' : '점검 내역'}`;
       const isEmerg = formData.status === '긴급';
-      const data = { ...formData, title: autoTitle, isEmergency: isEmerg, updatedAt: Date.now() };
+      // 이전 버전 호환성을 위해 photoBase64에 첫번째 사진을 남겨둡니다.
+      const data = { ...formData, photoBase64: formData.photos[0], title: autoTitle, isEmergency: isEmerg, updatedAt: Date.now() };
       delete data.id;
-
 
       if (existingData) { 
         await db.collection(reportsPath).doc(existingData.id).update(data); 
@@ -508,7 +529,6 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
         data.createdAt = Date.now(); 
         await db.collection(reportsPath).add(data); 
       }
-
 
       showToast('성공적으로 저장되었습니다.'); 
       onSave();
@@ -518,7 +538,6 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
       setSubmit(false); 
     }
   };
-
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border p-6 md:p-8 w-full max-w-7xl mx-auto">
@@ -551,18 +570,40 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
           </div>
         </div>
 
-
         <div className="space-y-6 lg:pl-8 lg:border-l">
           <div>
-            <label className="block text-sm font-bold mb-2 flex items-center gap-2"><Icon name="camera" className="text-blue-600"/> 사진 대지 첨부 * <span className="text-red-500 font-normal text-xs ml-2">(사진 첨부 시 즉시 저장 가능)</span></label>
-            {formData.photoBase64 ? (
-              <div className="relative w-full rounded-xl overflow-hidden border flex justify-center group"><img src={formData.photoBase64} className="max-h-64 object-contain"/><button onClick={() => set('photoBase64','')} className="absolute top-3 right-3 bg-red-500 text-white p-2 rounded-full opacity-0 group-hover:opacity-100"><Icon name="x"/></button></div>
-            ) : (
-              <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-xl bg-gray-50 cursor-pointer"><Icon name="camera" size={48} className="mb-3 text-gray-400"/><span className="font-bold text-gray-500">사진 업로드</span><input type="file" className="hidden" accept="image/*" onChange={uploadImage}/></label>
-            )}
+            <label className="block text-sm font-bold mb-2 flex items-center justify-between">
+              <span className="flex items-center gap-2"><Icon name="camera" className="text-blue-600"/> 사진 대지 첨부 * <span className="text-red-500 font-normal text-xs ml-2">(최대 3장)</span></span>
+              <span className="text-xs font-bold text-gray-500">{formData.photos.length} / 3</span>
+            </label>
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {formData.photos.map((p, idx) => (
+                <div key={idx} className="relative w-32 h-32 md:w-40 md:h-40 rounded-xl overflow-hidden border flex-shrink-0 group shadow-sm bg-gray-100">
+                  <img src={p} className="w-full h-full object-cover"/>
+                  <button type="button" onClick={() => removePhoto(idx)} className="absolute top-2 right-2 bg-red-500/90 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="x" size={16}/></button>
+                </div>
+              ))}
+              {formData.photos.length < 3 && (
+                <label className="flex flex-col items-center justify-center w-32 h-32 md:w-40 md:h-40 border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-xl bg-gray-50 cursor-pointer flex-shrink-0 transition-colors group">
+                  <Icon name="plus" size={32} className="mb-2 text-gray-400 group-hover:text-blue-500"/>
+                  <span className="font-bold text-xs text-gray-500 group-hover:text-blue-500">사진 추가</span>
+                  <input type="file" multiple className="hidden" accept="image/*" onChange={uploadImages}/>
+                </label>
+              )}
+            </div>
           </div>
           <div><label className="block text-sm font-bold mb-2">사진 상세 설명</label><textarea className="w-full p-3.5 border rounded-xl bg-gray-50 font-medium h-24 resize-none" value={formData.photoDesc} onChange={e => set('photoDesc', e.target.value)} /></div>
-          <div><label className="block text-sm font-bold mb-2 flex items-center gap-2"><Icon name="map-pin" className="text-blue-600"/> 위치 지정 (선택)</label><GoogleImageMap location={formData.location} onChange={loc => set('location', loc)} /></div>
+          
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm font-bold flex items-center gap-2"><Icon name="map-pin" className="text-blue-600"/> 층별 도면 위치 지정 (선택)</label>
+              <select className="p-2 border border-gray-300 rounded-lg font-bold text-sm bg-white" value={formData.floor} onChange={handleFloorChange}>
+                {FLOORS.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+            <FloorPlanMap floor={formData.floor} location={formData.location} onChange={loc => set('location', loc)} />
+          </div>
+
           <div><label className="block text-sm font-bold mb-2">상세 위치 설명</label><input className="w-full p-3.5 border rounded-xl bg-gray-50 font-bold" value={formData.locationDesc} onChange={e => set('locationDesc', e.target.value)} placeholder="예: 야구장 1루측 내야석 출입구 인근" /></div>
           <div><label className="block text-sm font-bold mb-2">비고</label><textarea className="w-full p-3.5 border rounded-xl bg-gray-50 font-medium h-28 resize-none" value={formData.remarks} onChange={e => set('remarks', e.target.value)} /></div>
         </div>
@@ -579,10 +620,12 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
   );
 }
 
-
 function ReportDetail({ report, userProfile, onEdit, onDelete, showToast }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const doDelete = async () => { try { await db.collection(reportsPath).doc(report.id).delete(); showToast('삭제되었습니다.'); onDelete(); } catch { showToast('삭제 오류'); } };
+  
+  const photos = report.photos || (report.photoBase64 ? [report.photoBase64] : []);
+
   return (
     <div className="bg-white rounded-2xl shadow-sm border p-6 md:p-8 w-full max-w-7xl mx-auto relative">
       {showConfirm && <ConfirmModal title="기록 삭제" message="정말로 이 기록을 삭제하시겠습니까?" onConfirm={doDelete} onCancel={() => setShowConfirm(false)} />}
@@ -603,9 +646,31 @@ function ReportDetail({ report, userProfile, onEdit, onDelete, showToast }) {
           <p className="text-sm font-bold text-gray-500 flex items-center justify-end gap-1"><Icon name="clock" size={14}/> 점검일: {report.date}</p>
         </div>
       </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-        <div><h3 className="text-lg font-black mb-3 flex items-center gap-2"><Icon name="camera" className="text-blue-600"/> 현장 사진</h3>{report.photoBase64 ? <img src={report.photoBase64} className="rounded-xl border max-h-80 w-full object-contain bg-gray-100"/> : <div className="rounded-xl border bg-gray-50 h-80 flex items-center justify-center font-bold text-gray-400">사진 없음</div>}<div className="mt-4"><span className="text-xs font-bold text-gray-500 block mb-2">사진 설명</span><p className="text-sm bg-gray-50 p-4 rounded-xl border font-medium whitespace-pre-wrap">{report.photoDesc}</p></div></div>
-        <div><h3 className="text-lg font-black mb-3 flex items-center gap-2"><Icon name="map-pin" className="text-blue-600"/> 위치 정보</h3><GoogleImageMap location={report.location} /><div className="mt-4"><span className="text-xs font-bold text-gray-500 block mb-2">상세 위치</span><p className="text-sm font-black p-4 bg-blue-50 border-blue-100 rounded-xl flex items-start gap-2"><Icon name="map-pin" size={18} className="text-blue-600 mt-0.5"/>{report.locationDesc}</p></div></div>
+        <div>
+          <h3 className="text-lg font-black mb-3 flex items-center gap-2"><Icon name="camera" className="text-blue-600"/> 현장 사진</h3>
+          {photos.length > 0 ? (
+            <div className={`grid gap-2 ${photos.length === 1 ? 'grid-cols-1' : photos.length === 2 ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-3'}`}>
+              {photos.map((p, idx) => (
+                <img key={idx} src={p} className="rounded-xl border w-full h-48 md:h-64 object-cover bg-gray-100 hover:opacity-90 transition-opacity cursor-pointer" onClick={() => window.open(p, '_blank')}/>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border bg-gray-50 h-64 flex items-center justify-center font-bold text-gray-400">사진 없음</div>
+          )}
+          <div className="mt-4"><span className="text-xs font-bold text-gray-500 block mb-2">사진 설명</span><p className="text-sm bg-gray-50 p-4 rounded-xl border font-medium whitespace-pre-wrap">{report.photoDesc}</p></div>
+        </div>
+        
+        <div><h3 className="text-lg font-black mb-3 flex items-center gap-2"><Icon name="map-pin" className="text-blue-600"/> 위치 정보</h3>
+          <div className="border rounded-xl p-2 bg-slate-50">
+            <div className="flex justify-between items-center mb-2 px-2">
+              <span className="font-bold text-sm text-slate-700">해당 층: <span className="text-blue-600">{report.floor || '지상'}</span></span>
+            </div>
+            <FloorPlanMap floor={report.floor || '지상'} location={report.location} />
+          </div>
+          <div className="mt-4"><span className="text-xs font-bold text-gray-500 block mb-2">상세 위치</span><p className="text-sm font-black p-4 bg-blue-50 border-blue-100 rounded-xl flex items-start gap-2"><Icon name="map-pin" size={18} className="text-blue-600 mt-0.5"/>{report.locationDesc}</p></div>
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-4 mb-8 bg-slate-50 p-5 rounded-xl border">
         <div><span className="text-xs font-bold text-gray-500 block mb-1">담당 점검자</span><span className="font-black">{report.inspectorName} <span className="text-xs font-medium text-gray-500">({report.inspectorEmail})</span></span></div>
@@ -621,6 +686,233 @@ function ReportDetail({ report, userProfile, onEdit, onDelete, showToast }) {
   );
 }
 
+// ── 공사일지 관련 컴포넌트 ─────────────────────────────────────────────────────────────
+
+function ConstructionForm({ userProfile, existingData, onSave, onCancel, showToast }) {
+  const getToday = () => new Date().toISOString().split('T')[0];
+  
+  const initialData = existingData ? {
+    ...existingData,
+    photos: existingData.photos || []
+  } : {
+    title: '', locationDesc: '', trade: TRADES[0], 
+    receiveDate: getToday(), constructionDate: getToday(), 
+    status: '공사예정', expectedDate: getToday(), completedDate: '',
+    photos: []
+  };
+
+  const [formData, setFormData] = useState(initialData);
+  const [isSubmitting, setSubmit] = useState(false);
+  const [error, setError] = useState('');
+  
+  const set = (f, v) => { setFormData(p => ({...p, [f]: v})); if(error) setError(''); };
+
+  const uploadImages = (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    
+    const availableSlots = 3 - formData.photos.length;
+    const filesToProcess = files.slice(0, availableSlots);
+
+    if (files.length > availableSlots) {
+      showToast('사진은 최대 3장까지만 첨부할 수 있습니다.');
+    }
+
+    filesToProcess.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const img = new Image(); img.src = ev.target.result;
+        img.onload = () => {
+          const cvs = document.createElement('canvas'); const scale = img.width > 800 ? 800/img.width : 1;
+          cvs.width = img.width * scale; cvs.height = img.height * scale;
+          cvs.getContext('2d').drawImage(img, 0, 0, cvs.width, cvs.height);
+          const base64 = cvs.toDataURL('image/jpeg', 0.7);
+          setFormData(p => ({ ...p, photos: [...(p.photos || []), base64] }));
+          if(error) setError('');
+        };
+      }; reader.readAsDataURL(file);
+    });
+  };
+
+  const removePhoto = (index) => {
+    setFormData(p => ({ ...p, photos: p.photos.filter((_, i) => i !== index) }));
+  };
+
+  const submit = async () => {
+    if (!formData.title.trim() || !formData.locationDesc.trim()) { 
+      setError('공사명과 위치를 모두 입력해주세요.'); return; 
+    }
+    setSubmit(true);
+    try {
+      const data = { ...formData, authorName: userProfile.name, authorUid: userProfile.uid, updatedAt: Date.now() };
+      delete data.id;
+
+      if (existingData) {
+        await db.collection(constLogsPath).doc(existingData.id).update(data);
+      } else {
+        data.createdAt = Date.now();
+        await db.collection(constLogsPath).add(data);
+      }
+      showToast('공사일지가 성공적으로 저장되었습니다.');
+      onSave();
+    } catch(e) {
+      setError('저장 중 오류가 발생했습니다.');
+    } finally {
+      setSubmit(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border p-6 md:p-8 w-full max-w-4xl mx-auto">
+      <h2 className="text-2xl font-black mb-6 border-b pb-4 flex items-center gap-2"><Icon name="hammer" className="text-amber-600"/> {existingData?'공사일지 수정':'새 공사일지 작성'}</h2>
+      {error && <div className="bg-red-50 text-red-700 p-4 rounded-xl mb-6 font-bold flex items-center gap-3"><Icon name="alert-circle"/> {error}</div>}
+      
+      <div className="space-y-6">
+        <div><label className="block text-sm font-bold mb-2">공사명 *</label><input type="text" className="w-full p-3.5 border rounded-xl bg-gray-50 font-bold focus:ring-2 focus:ring-amber-500" value={formData.title} onChange={e => set('title', e.target.value)} placeholder="예: 전기 배선 공사" /></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div><label className="block text-sm font-bold mb-2">공사 위치 *</label><input type="text" className="w-full p-3.5 border rounded-xl bg-gray-50 font-bold focus:ring-2 focus:ring-amber-500" value={formData.locationDesc} onChange={e => set('locationDesc', e.target.value)} placeholder="예: 지하 1층 주차장" /></div>
+          <div><label className="block text-sm font-bold mb-2">공종</label><select className="w-full p-3.5 border rounded-xl bg-gray-50 font-bold focus:ring-2 focus:ring-amber-500" value={formData.trade} onChange={e => set('trade', e.target.value)}>{TRADES.map(t => <option key={t}>{t}</option>)}</select></div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div><label className="block text-sm font-bold mb-2">공문 수신일</label><input type="date" className="w-full p-3.5 border rounded-xl bg-gray-50 font-bold focus:ring-2 focus:ring-amber-500" value={formData.receiveDate} onChange={e => set('receiveDate', e.target.value)} /></div>
+          <div><label className="block text-sm font-bold mb-2">공사일</label><input type="date" className="w-full p-3.5 border rounded-xl bg-gray-50 font-bold focus:ring-2 focus:ring-amber-500" value={formData.constructionDate} onChange={e => set('constructionDate', e.target.value)} /></div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-bold mb-2 flex items-center justify-between">
+            <span className="flex items-center gap-2"><Icon name="camera" className="text-amber-600"/> 관련 사진 첨부 (선택) <span className="text-gray-500 font-normal text-xs ml-2">(최대 3장)</span></span>
+            <span className="text-xs font-bold text-gray-500">{formData.photos.length} / 3</span>
+          </label>
+          <div className="flex gap-3 overflow-x-auto pb-2">
+            {formData.photos.map((p, idx) => (
+              <div key={idx} className="relative w-32 h-32 rounded-xl overflow-hidden border flex-shrink-0 group shadow-sm bg-gray-100">
+                <img src={p} className="w-full h-full object-cover"/>
+                <button type="button" onClick={() => removePhoto(idx)} className="absolute top-2 right-2 bg-red-500/90 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="x" size={16}/></button>
+              </div>
+            ))}
+            {formData.photos.length < 3 && (
+              <label className="flex flex-col items-center justify-center w-32 h-32 border-2 border-dashed border-gray-300 hover:border-amber-400 rounded-xl bg-gray-50 cursor-pointer flex-shrink-0 transition-colors group">
+                <Icon name="plus" size={32} className="mb-2 text-gray-400 group-hover:text-amber-500"/>
+                <span className="font-bold text-xs text-gray-500 group-hover:text-amber-500">사진 추가</span>
+                <input type="file" multiple className="hidden" accept="image/*" onChange={uploadImages}/>
+              </label>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-amber-50 p-5 rounded-xl border border-amber-100">
+          <label className="block text-sm font-bold mb-3 text-amber-900">공사종료 여부 (상태)</label>
+          <div className="flex gap-6 mb-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="radio" value="공사예정" checked={formData.status === '공사예정'} onChange={e => set('status', e.target.value)} className="w-5 h-5 text-amber-600 focus:ring-amber-500" />
+              <span className="font-black text-amber-900">공사예정 (진행중)</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="radio" value="공사완료" checked={formData.status === '공사완료'} onChange={e => set('status', e.target.value)} className="w-5 h-5 text-green-600 focus:ring-green-500" />
+              <span className="font-black text-green-700">공사완료</span>
+            </label>
+          </div>
+
+          <div className="bg-white p-4 rounded-lg border">
+            {formData.status === '공사예정' ? (
+              <div>
+                <label className="block text-sm font-bold mb-2 text-amber-800">공사 예정 날짜</label>
+                <input type="date" className="w-full p-3 border rounded-lg bg-amber-50/50 font-bold focus:ring-2 focus:ring-amber-500" value={formData.expectedDate} onChange={e => set('expectedDate', e.target.value)} />
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-bold mb-2 text-green-800">실제 공사 완료 날짜</label>
+                <input type="date" className="w-full p-3 border rounded-lg bg-green-50/50 font-bold focus:ring-2 focus:ring-green-500" value={formData.completedDate} onChange={e => set('completedDate', e.target.value)} />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-4 mt-8 pt-6 border-t">
+        <button onClick={onCancel} className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 font-black rounded-xl transition-colors">취소</button>
+        <button onClick={submit} disabled={isSubmitting !== false} className="flex-[2] py-4 bg-amber-600 hover:bg-amber-700 text-white font-black rounded-xl disabled:opacity-50 transition-colors shadow-md active:scale-95 flex justify-center items-center gap-2">
+          {isSubmitting ? <><Icon name="clock" size={20} className="animate-spin" /> 저장 처리 중...</> : '저장 완료하기'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ConstructionDetail({ constData, onEdit, onDelete, showToast }) {
+  const [showConfirm, setShowConfirm] = useState(false);
+  const doDelete = async () => { try { await db.collection(constLogsPath).doc(constData.id).delete(); showToast('삭제되었습니다.'); onDelete(); } catch { showToast('삭제 오류'); } };
+  
+  const isScheduled = constData.status === '공사예정';
+  const photos = constData.photos || [];
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border p-6 md:p-8 w-full max-w-4xl mx-auto relative">
+      {showConfirm && <ConfirmModal title="공사일지 삭제" message="정말로 삭제하시겠습니까?" onConfirm={doDelete} onCancel={() => setShowConfirm(false)} />}
+      
+      <div className="flex flex-col md:flex-row justify-between items-start mb-6 border-b pb-6 gap-4">
+        <div className="flex-1">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-sm font-bold bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1 rounded-full flex items-center gap-1"><Icon name="hammer" size={14}/> {constData.trade}</span>
+            {isScheduled && <span className="flex items-center gap-1 text-red-600 font-black text-sm bg-red-50 px-2 py-1 rounded-lg animate-pulse"><Icon name="siren" size={16} /> 진행/예정</span>}
+          </div>
+          <h2 className="text-2xl md:text-3xl font-black text-gray-900">{constData.title}</h2>
+          <p className="text-gray-500 font-bold mt-2 flex items-center gap-2"><Icon name="map-pin" size={16}/> {constData.locationDesc}</p>
+        </div>
+        <div className="text-right shrink-0">
+          <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-black mb-3 border ${isScheduled ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-green-100 text-green-700 border-green-300'}`}>
+            {isScheduled ? <><Icon name="clock" size={16}/> 공사예정</> : <><Icon name="check-circle" size={16}/> 공사완료</>}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div className="bg-gray-50 p-4 rounded-xl border">
+          <span className="text-xs font-bold text-gray-500 block mb-1">공문 수신일</span>
+          <span className="font-black text-lg">{constData.receiveDate || '-'}</span>
+        </div>
+        <div className="bg-gray-50 p-4 rounded-xl border">
+          <span className="text-xs font-bold text-gray-500 block mb-1">공사일</span>
+          <span className="font-black text-lg">{constData.constructionDate || '-'}</span>
+        </div>
+        
+        {isScheduled ? (
+           <div className="bg-amber-50 p-4 rounded-xl border border-amber-200 md:col-span-2">
+            <span className="text-xs font-bold text-amber-700 block mb-1 flex items-center gap-1"><Icon name="calendar-clock" size={14}/> 예정 날짜</span>
+            <span className="font-black text-xl text-amber-900">{constData.expectedDate || '-'}</span>
+          </div>
+        ) : (
+          <div className="bg-green-50 p-4 rounded-xl border border-green-200 md:col-span-2">
+            <span className="text-xs font-bold text-green-700 block mb-1 flex items-center gap-1"><Icon name="calendar-check" size={14}/> 실제 완료 날짜</span>
+            <span className="font-black text-xl text-green-900">{constData.completedDate || '-'}</span>
+          </div>
+        )}
+      </div>
+
+      {photos.length > 0 && (
+        <div className="mb-8 border-t pt-6">
+          <h3 className="text-lg font-black mb-3 flex items-center gap-2"><Icon name="camera" className="text-amber-600"/> 관련 첨부 사진</h3>
+          <div className={`grid gap-3 ${photos.length === 1 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-2 lg:grid-cols-3'}`}>
+            {photos.map((p, idx) => (
+              <img key={idx} src={p} className="rounded-xl border w-full h-48 object-cover bg-gray-100 hover:opacity-90 transition-opacity cursor-pointer" onClick={() => window.open(p, '_blank')}/>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border">
+        <div><span className="text-xs font-bold text-gray-500 block mb-1">작성자</span><span className="font-black text-sm">{constData.authorName}</span></div>
+        <div className="text-right"><span className="text-xs font-bold text-gray-500 block mb-1">등록 일시</span><span className="font-black text-sm">{new Date(constData.createdAt).toLocaleString()}</span></div>
+      </div>
+      
+      <div className="flex gap-3 pt-6 mt-6 border-t justify-end">
+        <button onClick={onEdit} className="px-6 py-3 bg-amber-50 text-amber-700 font-black rounded-xl flex gap-2 hover:bg-amber-100 transition-colors"><Icon name="edit" size={18}/> 수정</button>
+        <button onClick={() => setShowConfirm(true)} className="px-6 py-3 bg-red-50 text-red-700 font-black rounded-xl flex gap-2 hover:bg-red-100 transition-colors"><Icon name="trash-2" size={18}/> 삭제</button>
+      </div>
+    </div>
+  );
+}
 
 // ── App 시작 부분 ─────────────────────────────────────────────────────────────
 function App() {
@@ -628,33 +920,32 @@ function App() {
   const [userProfile, setUserProfile] = useState(null);
   const [reports, setReports] = useState([]);
   const [dailyLogs, setDailyLogs] = useState([]);
-  const [activeTab, setActiveTab] = useState('voc');
-  const [view, setView] = useState('loading');
+  const [constructions, setConstructions] = useState([]);
+
+  const [activeTab, setActiveTab] = useState('voc'); 
+  const [view, setView] = useState('loading'); 
+  
   const [selectedReport, setSelected] = useState(null);
+  const [selectedConst, setSelectedConst] = useState(null);
+
   const [authError, setAuthError] = useState('');
   const [toastMsg, setToastMsg] = useState('');
   
-  // 🚨 검색 기능에 사용할 상태값들 🚨
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   
-  // 입력 필드값을 저장했다가 '검색' 버튼 누를 때만 적용하기 위한 임시 상태
   const [tempSearchTerm, setTempSearchTerm] = useState('');
   const [tempStatusFilter, setTempStatusFilter] = useState('');
   const [tempCategoryFilter, setTempCategoryFilter] = useState('');
 
-
   const toast = (msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 5000); };
 
-
-  // 🚨 검색 실행 함수 🚨
   const handleSearch = () => {
     setSearchTerm(tempSearchTerm);
     setStatusFilter(tempStatusFilter);
     setCategoryFilter(tempCategoryFilter);
   };
-
 
   const handleMigration = async () => {
     if (!window.confirm("데이터베이스의 모든 '조치 예정' 글들을 '조치 대기'로 일괄 변경하시겠습니까?")) return;
@@ -675,16 +966,14 @@ function App() {
     }
   };
 
-
   useEffect(() => {
     let isResolved = false;
     const fallbackTimer = setTimeout(() => {
       if (!isResolved) {
-        setAuthError('Firebase 응답이 없습니다. Vercel 도메인 승인이나 Firestore 규칙 설정을 다시 한 번 확인해 주세요.');
+        setAuthError('Firebase 응답이 없습니다. 접속 환경을 확인해 주세요.');
         setView('error');
       }
     }, 5000);
-
 
     const checkAuth = async () => {
       try {
@@ -692,16 +981,11 @@ function App() {
       } catch (err) {
         isResolved = true;
         clearTimeout(fallbackTimer);
-        if (err.code === 'auth/unauthorized-domain') {
-          setAuthError('Vercel 배포 주소가 Firebase에 등록되지 않았습니다! \n\n[해결방법]\n1. Firebase 콘솔 접속\n2. 좌측 Authentication 클릭\n3. 상단 Settings(설정) 탭 클릭\n4. Authorized domains(승인된 도메인) 메뉴로 이동\n5. Add domain(도메인 추가)을 눌러 현재 Vercel 사이트 주소를 추가하세요.');
-        } else {
-          setAuthError(`로그인 오류가 발생했습니다: ${err.message}`);
-        }
+        setAuthError(`로그인 오류가 발생했습니다: ${err.message}`);
         setView('error');
       }
     };
     checkAuth();
-
 
     const unsub = auth.onAuthStateChanged(async (u) => {
       if (u) {
@@ -717,22 +1001,18 @@ function App() {
             setView('register');
           }
         } catch (err) {
-          setAuthError(`데이터베이스 접속 권한 오류입니다. \n\nFirebase Console -> Firestore Database -> 규칙(Rules) 탭에서 아래와 같이 설정해주세요.\n\nmatch /{document=**} {\n  allow read, write: if true;\n}\n\n(상세 에러: ${err.message})`);
+          setAuthError(`데이터베이스 접속 오류입니다.`);
           setView('error');
         }
       }
     });
 
-
     return () => { unsub(); clearTimeout(fallbackTimer); };
   }, []);
 
-
   useEffect(() => {
     if (!user || !userProfile) return;
-    
     const sixMonthsMs = 15552000000;
-
 
     const unsubReports = db.collection(reportsPath).onSnapshot(snap => {
       const now = Date.now();
@@ -740,15 +1020,12 @@ function App() {
       snap.docs.forEach(d => {
         const data = d.data();
         if (data.createdAt && Number.isInteger(data.createdAt) && (now - data.createdAt > sixMonthsMs)) {
-          db.collection(reportsPath).doc(d.id).delete().catch(e => console.error("자동 삭제 오류", e));
-        } else {
-          validData.push({id: d.id, ...data});
-        }
+          db.collection(reportsPath).doc(d.id).delete().catch(e => console.error("삭제 오류", e));
+        } else { validData.push({id: d.id, ...data}); }
       });
       validData.sort((a, b) => b.createdAt - a.createdAt);
       setReports(validData);
-    }, err => console.error("Reports DB Error:", err));
-
+    });
 
     const unsubLogs = db.collection(logsPath).onSnapshot(snap => {
       const now = Date.now();
@@ -756,18 +1033,21 @@ function App() {
       snap.docs.forEach(d => {
         const data = d.data();
         if (data.createdAt && Number.isInteger(data.createdAt) && (now - data.createdAt > sixMonthsMs)) {
-          db.collection(logsPath).doc(d.id).delete().catch(e => console.error("자동 삭제 오류", e));
-        } else {
-          validLogs.push({id: d.id, ...data});
-        }
+          db.collection(logsPath).doc(d.id).delete();
+        } else { validLogs.push({id: d.id, ...data}); }
       });
       setDailyLogs(validLogs);
-    }, err => console.error("Logs DB Error:", err));
+    });
 
+    const unsubConst = db.collection(constLogsPath).onSnapshot(snap => {
+      const validConst = [];
+      snap.docs.forEach(d => { validConst.push({id: d.id, ...d.data()}); });
+      validConst.sort((a, b) => b.createdAt - a.createdAt);
+      setConstructions(validConst);
+    });
 
-    return () => { unsubReports(); unsubLogs(); };
+    return () => { unsubReports(); unsubLogs(); unsubConst(); };
   }, [user, userProfile]);
-
 
   if (view === 'error') return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -780,7 +1060,6 @@ function App() {
     </div>
   );
 
-
   if (view === 'loading') return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-gray-500">
       <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-blue-500 border-solid mb-4"></div>
@@ -788,18 +1067,14 @@ function App() {
     </div>
   );
 
-
   if (view === 'register') return <RegisterForm user={user} setProfile={setUserProfile} setView={setView} showToast={toast} />;
 
-
-  // 🚨 필터 적용 (검색 버튼을 눌렀을 때의 상태값으로 필터링) 🚨
   const filtered = reports.filter(r => {
     const matchSearch = (r.title || '').includes(searchTerm) || (r.locationDesc || '').includes(searchTerm);
     const matchStatus = statusFilter ? r.status === statusFilter : true;
     const matchCategory = categoryFilter ? r.category === categoryFilter : true;
     return matchSearch && matchStatus && matchCategory;
   });
-
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans pb-10">
@@ -815,29 +1090,29 @@ function App() {
         </div>
       </header>
 
-
       <main className="flex-1 w-full max-w-full p-3 md:p-6 flex flex-col gap-6">
         {view !== 'dashboard' && (
-          <button onClick={() => { setView('dashboard'); setSelected(null); }} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-black bg-white px-5 py-3 rounded-xl shadow-sm border border-gray-200 mx-auto max-w-7xl w-full transition-transform hover:scale-[1.01]">
+          <button onClick={() => { setView('dashboard'); setSelected(null); setSelectedConst(null); }} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-black bg-white px-5 py-3 rounded-xl shadow-sm border border-gray-200 mx-auto max-w-7xl w-full transition-transform hover:scale-[1.01]">
             <Icon name="home" size={20}/> 대시보드로 돌아가기
           </button>
         )}
 
-
         {view === 'dashboard' && (
           <div className="w-full max-w-[1800px] mx-auto flex flex-col gap-6">
-            <div className="flex flex-wrap bg-white p-1.5 rounded-2xl shadow-sm border border-gray-200 w-fit">
-              <button onClick={() => setActiveTab('voc')} className={`px-6 py-3 rounded-xl text-sm font-black flex items-center gap-2 transition-all ${activeTab==='voc'?'bg-slate-800 text-white shadow-md':'text-gray-500 hover:bg-gray-100'}`}>
-                <Icon name="file-warning" size={18}/> 시설안전관리팀
+            <div className="flex flex-wrap bg-white p-1.5 rounded-2xl shadow-sm border border-gray-200 w-fit gap-1">
+              <button onClick={() => setActiveTab('voc')} className={`px-5 py-3 rounded-xl text-sm font-black flex items-center gap-2 transition-all ${activeTab==='voc'?'bg-slate-800 text-white shadow-md':'text-gray-500 hover:bg-gray-100'}`}>
+                <Icon name="file-warning" size={18}/> 시설안전점검
               </button>
-              <button onClick={() => setActiveTab('calendar')} className={`px-6 py-3 rounded-xl text-sm font-black flex items-center gap-2 transition-all ${activeTab==='calendar'?'bg-slate-800 text-white shadow-md':'text-gray-500 hover:bg-gray-100'}`}>
+              <button onClick={() => setActiveTab('construction')} className={`px-5 py-3 rounded-xl text-sm font-black flex items-center gap-2 transition-all ${activeTab==='construction'?'bg-amber-600 text-white shadow-md':'text-gray-500 hover:bg-gray-100'}`}>
+                <Icon name="hammer" size={18}/> 공사일지
+              </button>
+              <button onClick={() => setActiveTab('calendar')} className={`px-5 py-3 rounded-xl text-sm font-black flex items-center gap-2 transition-all ${activeTab==='calendar'?'bg-slate-800 text-white shadow-md':'text-gray-500 hover:bg-gray-100'}`}>
                 <Icon name="calendar" size={18}/> 일일 점검일지
               </button>
-              <button onClick={() => setActiveTab('excel')} className={`px-6 py-3 rounded-xl text-sm font-black flex items-center gap-2 transition-all ${activeTab==='excel'?'bg-green-600 text-white shadow-md':'text-gray-500 hover:bg-gray-100'}`}>
-                <Icon name="file-spreadsheet" size={18}/> 엑셀로 내보내기
+              <button onClick={() => setActiveTab('excel')} className={`px-5 py-3 rounded-xl text-sm font-black flex items-center gap-2 transition-all ${activeTab==='excel'?'bg-green-600 text-white shadow-md':'text-gray-500 hover:bg-gray-100'}`}>
+                <Icon name="file-spreadsheet" size={18}/> 엑셀 다운로드
               </button>
             </div>
-
 
             {activeTab === 'voc' && (
               <div className="w-full max-w-7xl mx-auto animate-in fade-in duration-300">
@@ -849,8 +1124,6 @@ function App() {
                   <StatusCard title="긴급 조치" count={reports.filter(r=>r.status==='긴급').length} color="bg-red-50 text-red-700 border-red-200" iconName="file-warning"/>
                 </div>
 
-
-                {/* 🚨 새로운 검색창 UI 영역: 입력 내용과 검색 버튼으로 구성 🚨 */}
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex flex-col lg:flex-row gap-4 items-center justify-between mb-6">
                   <div className="flex flex-wrap lg:flex-nowrap gap-2 w-full lg:w-auto flex-1">
                     <select className="p-3 border border-gray-300 rounded-xl bg-gray-50 outline-none text-sm font-bold w-full sm:w-auto min-w-[140px]" 
@@ -865,30 +1138,26 @@ function App() {
                       {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
 
-
                     <div className="relative flex-1 min-w-[200px] w-full">
                       <Icon name="search" size={18} className="absolute left-4 top-3.5 text-gray-400 pointer-events-none"/>
-                      <input type="text" placeholder="제목/상세위치 검색 (빈칸으로 검색 가능)" 
+                      <input type="text" placeholder="제목/상세위치 검색" 
                              className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl bg-gray-50 outline-none text-sm font-bold" 
                              value={tempSearchTerm} 
                              onChange={e => setTempSearchTerm(e.target.value)} 
                              onKeyDown={e => { if(e.key === 'Enter') handleSearch(); }} />
                     </div>
 
-
-                    <button onClick={handleSearch} className="bg-slate-700 hover:bg-slate-800 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-md transition-transform hover:scale-[1.02] active:scale-95 w-full sm:w-auto shrink-0">
+                    <button onClick={handleSearch} className="bg-slate-700 hover:bg-slate-800 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-md w-full sm:w-auto">
                       <Icon name="search" size={18}/> 검색
                     </button>
                   </div>
 
-
                   <div className="w-full lg:w-auto shrink-0 border-t lg:border-t-0 pt-4 lg:pt-0 border-gray-100 flex justify-end">
-                    <button onClick={() => { setSelected(null); setView('form'); }} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-md transition-transform hover:scale-[1.02] active:scale-95 w-full sm:w-auto">
+                    <button onClick={() => { setSelected(null); setView('form'); }} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-md w-full sm:w-auto">
                       <Icon name="plus" size={18}/> 신규 등록
                     </button>
                   </div>
                 </div>
-
 
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                   <div className="overflow-x-auto">
@@ -896,9 +1165,9 @@ function App() {
                       <thead className="bg-gray-100 border-b border-gray-200 text-gray-700">
                         <tr>
                           <th className="p-5 font-black w-32 text-center">진행상태</th>
+                          <th className="p-5 font-black w-24">층수</th>
                           <th className="p-5 font-black">대분류</th>
-                          <th className="p-5 font-black">공종</th>
-                          <th className="p-5 font-black w-full">제목</th>
+                          <th className="p-5 font-black w-full">제목 (위치)</th>
                           <th className="p-5 font-black">점검자</th>
                           <th className="p-5 font-black">점검일자</th>
                         </tr>
@@ -920,8 +1189,8 @@ function App() {
                                   'bg-white text-gray-700 border-gray-300'
                                 }`}>{r.status}</span>
                               </td>
+                              <td className="p-5 font-bold text-gray-600">{r.floor || '지상'}</td>
                               <td className={`p-5 font-bold ${isEmergency ? 'text-red-600' : 'text-gray-600'}`}>{r.category}</td>
-                              <td className={`p-5 font-black ${isEmergency ? 'text-red-600' : 'text-gray-800'}`}>{r.trade}</td>
                               <td className={`p-5 font-black max-w-[200px] md:max-w-md overflow-hidden text-ellipsis ${isEmergency ? 'text-red-600' : 'text-gray-900 group-hover:text-blue-700'}`}>{r.title}</td>
                               <td className={`p-5 font-bold ${isEmergency ? 'text-red-600' : 'text-gray-600'}`}>{r.inspectorName}</td>
                               <td className={`p-5 font-bold ${isEmergency ? 'text-red-600' : 'text-gray-600'}`}>{r.date}</td>
@@ -932,28 +1201,77 @@ function App() {
                     </table>
                   </div>
                 </div>
-                
-                <div className="mt-8 p-4 bg-gray-100 rounded-xl flex flex-col md:flex-row items-center justify-between border border-gray-200 gap-4">
-                  <div className="text-sm text-gray-600 font-bold flex items-center">
-                    <Icon name="info" size={18} className="text-blue-500 mr-2" />
-                    [시스템 관리] 예전에 등록했던 글 중 상태가 '조치 예정'인 데이터를 '조치 대기'로 호환 업데이트 합니다.
-                  </div>
-                  <button onClick={handleMigration} className="px-5 py-2.5 bg-slate-700 text-white text-sm font-bold rounded-xl shadow hover:bg-slate-800 transition-colors whitespace-nowrap">
-                    일괄 업데이트 실행
-                  </button>
-                </div>
-
-
               </div>
             )}
 
+            {activeTab === 'construction' && (
+              <div className="w-full max-w-7xl mx-auto animate-in fade-in duration-300">
+                <div className="flex justify-between items-center mb-6">
+                  <div>
+                    <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2"><Icon name="hammer" className="text-amber-600"/> 공사일지 현황</h2>
+                    <p className="text-sm text-gray-500 font-bold mt-1">사내 진행중인 공사 및 완료 내역을 관리합니다.</p>
+                  </div>
+                  <button onClick={() => { setSelectedConst(null); setView('const_form'); }} className="bg-amber-600 hover:bg-amber-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-md transition-transform hover:scale-[1.02] active:scale-95">
+                    <Icon name="plus" size={18}/> 새 공사일지 등록
+                  </button>
+                </div>
+
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm whitespace-nowrap">
+                      <thead className="bg-amber-50 border-b border-amber-100 text-amber-900">
+                        <tr>
+                          <th className="p-5 font-black w-24 text-center">상태</th>
+                          <th className="p-5 font-black">공종</th>
+                          <th className="p-5 font-black w-full">공사명 (위치)</th>
+                          <th className="p-5 font-black">공사일</th>
+                          <th className="p-5 font-black">완료/예정일</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {constructions.length === 0 ? (
+                          <tr><td colSpan="5" className="p-16 text-center text-gray-500 font-bold">등록된 공사일지가 없습니다.</td></tr>
+                        ) : constructions.map(c => {
+                          const isScheduled = c.status === '공사예정';
+                          return (
+                            <tr key={c.id} onClick={() => { setSelectedConst(c); setView('const_detail'); }} className="hover:bg-amber-50/50 cursor-pointer transition-colors group">
+                              <td className="p-5 text-center">
+                                {isScheduled ? (
+                                  <div className="flex flex-col items-center justify-center gap-1">
+                                    <Icon name="siren" size={24} className="text-red-500 animate-pulse" />
+                                    <span className="text-[10px] font-black text-red-600 bg-red-50 px-2 py-0.5 rounded-full">공사예정</span>
+                                  </div>
+                                ) : (
+                                  <span className="px-3 py-1.5 rounded-full text-xs font-black border bg-green-50 text-green-700 border-green-200">공사완료</span>
+                                )}
+                              </td>
+                              <td className="p-5 font-bold text-gray-600">{c.trade}</td>
+                              <td className="p-5 font-black text-gray-900 group-hover:text-amber-700">
+                                <div>{c.title}</div>
+                                <div className="text-xs text-gray-500 font-bold mt-1 flex items-center gap-1"><Icon name="map-pin" size={12}/> {c.locationDesc}</div>
+                              </td>
+                              <td className="p-5 font-bold text-gray-600">{c.constructionDate}</td>
+                              <td className="p-5 font-bold">
+                                {isScheduled ? (
+                                  <span className="text-amber-600 flex items-center gap-1"><Icon name="calendar-clock" size={14}/> {c.expectedDate}</span>
+                                ) : (
+                                  <span className="text-green-600 flex items-center gap-1"><Icon name="calendar-check" size={14}/> {c.completedDate}</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {activeTab === 'calendar' && <CalendarView logs={dailyLogs} userProfile={userProfile} showToast={toast} />}
-            
             {activeTab === 'excel' && <ExcelExportView reports={reports} />}
           </div>
         )}
-
 
         {view === 'form' && (
           <div className="w-full max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -965,8 +1283,18 @@ function App() {
             <ReportDetail report={selectedReport} userProfile={userProfile} onEdit={() => setView('form')} onDelete={() => setView('dashboard')} showToast={toast} />
           </div>
         )}
-      </main>
 
+        {view === 'const_form' && (
+           <div className="w-full max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
+             <ConstructionForm userProfile={userProfile} existingData={selectedConst} onSave={() => setView('dashboard')} onCancel={() => setView(selectedConst ? 'const_detail' : 'dashboard')} showToast={toast} />
+           </div>
+        )}
+        {view === 'const_detail' && selectedConst && (
+           <div className="w-full max-w-7xl mx-auto animate-in fade-in zoom-in-95 duration-200">
+             <ConstructionDetail constData={selectedConst} onEdit={() => setView('const_form')} onDelete={() => setView('dashboard')} showToast={toast} />
+           </div>
+        )}
+      </main>
 
       {toastMsg && (
         <div className="fixed bottom-6 right-6 bg-slate-900 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 z-50 animate-bounce border border-slate-700">
@@ -978,13 +1306,7 @@ function App() {
   );
 }
 
-
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 </body>
 </html>
-
-
-
-
-```
