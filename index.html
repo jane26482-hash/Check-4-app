@@ -73,7 +73,7 @@ const LOG_CATEGORIES = ['일일 시설안전 점검', '일일 화재점검'];
 const FLOORS = ['지상', '지하 1층', '지하 2층', '지하 3층', '지하 4층'];
 
 const FLOOR_IMAGES = {
-  '지상': './images/map_ground.png',
+  '지상': './imagesmap_ground.png',
   '지하 1층': './imagesmap_b1.png',
   '지하 2층': './imagesmap_b2.png',
   '지하 3층': './imagesmap_b3.png',
@@ -417,13 +417,9 @@ function CalendarView({ logs, reports, constructions, userProfile, showToast }) 
           if (!day) return <div key={`e-${idx}`} className="bg-white/50 min-h-[160px]" />;
           const dateStr = fmt(year, month, day); const isToday = dateStr === todayStr;
           
-          // 1. 수동 등록된 로그 (기존)
           const dayLogs = logs.filter(l => l.date === dateStr);
-          // 2. 시설안전점검 데이터가 있는지 확인 (해당 날짜에 글이 등록되었는지)
           const hasReport = reports.some(r => r.date === dateStr);
-          // 3. 공사일지: 상태가 '공사예정'이고 예정일이 해당 날짜인 경우
           const dayExpectedConsts = constructions.filter(c => c.status === '공사예정' && c.expectedDate === dateStr);
-          // 4. 공사일지: 상태가 '공사완료'이고 완료일이 해당 날짜인 경우
           const dayCompletedConsts = constructions.filter(c => c.status === '공사완료' && c.completedDate === dateStr);
 
           return (
@@ -435,14 +431,12 @@ function CalendarView({ logs, reports, constructions, userProfile, showToast }) 
               </div>
               <div className="flex flex-col gap-1.5 flex-1 overflow-y-auto pr-1 scrollbar-hide">
                 
-                {/* 🚨 시설안전점검 자동 표시 */}
                 {hasReport && (
                   <div className="bg-blue-100 text-blue-700 text-[11px] font-black px-2 py-1.5 rounded-md border border-blue-200 flex items-center gap-1 shadow-sm shrink-0">
                     <Icon name="check-circle" size={14}/> 일일점검 완료
                   </div>
                 )}
 
-                {/* 🚨 공사 예정 자동 표시 */}
                 {dayExpectedConsts.map(c => (
                   <div key={`exp-${c.id}`} className="bg-amber-100 text-amber-800 text-[11px] font-black px-2 py-1.5 rounded-md border border-amber-200 flex items-center gap-1 shadow-sm shrink-0 truncate" title={`${c.title} - 공사 예정`}>
                     <Icon name="siren" size={12} className="text-red-500 animate-pulse shrink-0"/> 
@@ -450,7 +444,6 @@ function CalendarView({ logs, reports, constructions, userProfile, showToast }) 
                   </div>
                 ))}
 
-                {/* 🚨 공사 완료 자동 표시 */}
                 {dayCompletedConsts.map(c => (
                   <div key={`com-${c.id}`} className="bg-green-100 text-green-800 text-[11px] font-black px-2 py-1.5 rounded-md border border-green-200 flex items-center gap-1 shadow-sm shrink-0 truncate" title={`${c.title} - 공사 완료`}>
                     <Icon name="check-circle" size={12} className="shrink-0"/> 
@@ -458,7 +451,6 @@ function CalendarView({ logs, reports, constructions, userProfile, showToast }) 
                   </div>
                 ))}
 
-                {/* 기존 수동 로그 표시 */}
                 {dayLogs.map(log => (
                   <div key={log.id} className={`relative group/log px-2 py-2.5 rounded-lg border-l-4 shadow-sm shrink-0 ${log.category==='일일 시설안전 점검'?'bg-slate-50 border-blue-400':'bg-slate-50 border-red-400'}`}>
                     <button onClick={e => { e.stopPropagation(); setDeleteTargetId(log.id); }} className="absolute top-1.5 right-1.5 opacity-0 group-hover/log:opacity-100 bg-red-50 text-red-600 rounded p-1 hover:bg-red-600 hover:text-white z-20"><Icon name="trash-2" size={12}/></button>
