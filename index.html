@@ -55,7 +55,9 @@
   window.__fbDb = firebase.firestore();
 </script>
 
-<script type="text/babel" data-presets="react">
+<script type="text/babel" data-presets="react" data-type="module">
+/** @jsx React.createElement */
+/** @jsxFrag React.Fragment */
 const { useState, useEffect, useRef } = React;
 
 const auth = window.__fbAuth;
