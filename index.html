@@ -101,7 +101,7 @@ function ConfirmModal({ title, message, onConfirm, onCancel }) {
         <p className="text-sm text-gray-500 mb-8 font-bold leading-relaxed break-keep">{message}</p>
         <div className="flex gap-3">
           <button onClick={onCancel} className="flex-1 py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-black rounded-xl">취소</button>
-          <button onClick={onConfirm} className="flex-1 py-3.5 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl shadow-md">삭제하기</button>
+          <button onClick={onConfirm} className="flex-1 py-3.5 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl shadow-md">진행하기</button>
         </div>
       </div>
     </div>
@@ -547,7 +547,6 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
     try {
       const autoTitle = `[${formData.category}] ${formData.locationDesc ? formData.locationDesc + ' 점검' : '점검 내역'}`;
       const isEmerg = formData.status === '긴급';
-      // 이전 버전 호환성을 위해 photoBase64에 첫번째 사진을 남겨둡니다.
       const data = { ...formData, photoBase64: formData.photos[0], title: autoTitle, isEmergency: isEmerg, updatedAt: Date.now() };
       delete data.id;
 
@@ -650,13 +649,20 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
 
 function ReportDetail({ report, userProfile, onEdit, onDelete, showToast }) {
   const [showConfirm, setShowConfirm] = useState(false);
-  const doDelete = async () => { try { await db.collection(reportsPath).doc(report.id).delete(); showToast('삭제되었습니다.'); onDelete(); } catch { showToast('삭제 오류'); } };
+  const doDelete = async () => { 
+    try { 
+      // 삭제 대신 휴지통으로 이동(Soft Delete)
+      await db.collection(reportsPath).doc(report.id).update({ deleted: true, deletedAt: Date.now() }); 
+      showToast('휴지통으로 이동되었습니다.'); 
+      onDelete(); 
+    } catch { showToast('삭제 오류'); } 
+  };
   
   const photos = report.photos || (report.photoBase64 ? [report.photoBase64] : []);
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border p-6 md:p-8 w-full max-w-7xl mx-auto relative">
-      {showConfirm && <ConfirmModal title="기록 삭제" message="정말로 이 기록을 삭제하시겠습니까?" onConfirm={doDelete} onCancel={() => setShowConfirm(false)} />}
+      {showConfirm && <ConfirmModal title="휴지통 이동" message="이 기록을 휴지통으로 이동하시겠습니까?" onConfirm={doDelete} onCancel={() => setShowConfirm(false)} />}
       <div className="flex flex-col md:flex-row justify-between items-start mb-8 border-b pb-6 gap-4">
         <div>
           <div className="flex items-center gap-2 mb-3"><span className="text-sm font-black text-blue-700 bg-blue-50 px-3 py-1 rounded-full">{report.category}</span><span className="text-sm font-bold bg-gray-50 border px-3 py-1 rounded-full">{report.trade}</span></div>
@@ -1049,6 +1055,7 @@ function App() {
   useEffect(() => {
     if (!user || !userProfile) return;
     const sixMonthsMs = 15552000000;
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000; // 30일
 
     const unsubReports = db.collection(reportsPath).onSnapshot(snap => {
       const now = Date.now();
@@ -1056,10 +1063,16 @@ function App() {
       snap.docs.forEach(d => {
         const data = d.data();
         if (data.createdAt && Number.isInteger(data.createdAt) && (now - data.createdAt > sixMonthsMs)) {
+          // 6개월 경과 데이터 영구 삭제
           db.collection(reportsPath).doc(d.id).delete().catch(e => console.error("삭제 오류", e));
-        } else { validData.push({id: d.id, ...data}); }
+        } else if (data.deleted && data.deletedAt && (now - data.deletedAt > thirtyDaysMs)) {
+          // 휴지통에서 30일 경과 시 자동 영구 삭제
+          db.collection(reportsPath).doc(d.id).delete().catch(e => console.error("영구 삭제 오류", e));
+        } else { 
+          validData.push({id: d.id, ...data}); 
+        }
       });
-      validData.sort((a, b) => b.createdAt - a.createdAt);
+      validData.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       setReports(validData);
     });
 
@@ -1078,7 +1091,7 @@ function App() {
     const unsubConst = db.collection(constLogsPath).onSnapshot(snap => {
       const validConst = [];
       snap.docs.forEach(d => { validConst.push({id: d.id, ...d.data()}); });
-      validConst.sort((a, b) => b.createdAt - a.createdAt);
+      validConst.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       setConstructions(validConst);
     });
 
@@ -1105,7 +1118,11 @@ function App() {
 
   if (view === 'register') return <RegisterForm user={user} setProfile={setUserProfile} setView={setView} showToast={toast} />;
 
-  const filtered = reports.filter(r => {
+  // 정상 활성 데이터와 휴지통 데이터 분리
+  const activeReports = reports.filter(r => !r.deleted);
+  const trashReports = reports.filter(r => r.deleted);
+
+  const filtered = activeReports.filter(r => {
     const matchSearch = (r.title || '').includes(searchTerm) || (r.locationDesc || '').includes(searchTerm);
     const matchStatus = statusFilter ? r.status === statusFilter : true;
     const matchCategory = categoryFilter ? r.category === categoryFilter : true;
@@ -1134,13 +1151,13 @@ function App() {
 
   const handleDeleteSelected = async () => {
     if (selectedIds.length === 0) return;
-    if (window.confirm(`선택한 ${selectedIds.length}개의 점검 내역을 일괄 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
+    if (window.confirm(`선택한 ${selectedIds.length}개의 점검 내역을 휴지통으로 이동하시겠습니까?`)) {
       try {
-        await Promise.all(selectedIds.map(id => db.collection(reportsPath).doc(id).delete()));
-        toast(`선택한 ${selectedIds.length}개의 항목이 성공적으로 삭제되었습니다.`);
+        await Promise.all(selectedIds.map(id => db.collection(reportsPath).doc(id).update({ deleted: true, deletedAt: Date.now() })));
+        toast(`선택한 ${selectedIds.length}개의 항목이 휴지통으로 이동되었습니다.`);
         setSelectedIds([]);
       } catch (err) {
-        toast('항목 삭제 중 오류가 발생했습니다.');
+        toast('항목 이동 중 오류가 발생했습니다.');
       }
     }
   };
@@ -1181,16 +1198,19 @@ function App() {
               <button onClick={() => setActiveTab('excel')} className={`px-5 py-3 rounded-xl text-sm font-black flex items-center gap-2 transition-all ${activeTab==='excel'?'bg-green-600 text-white shadow-md':'text-gray-500 hover:bg-gray-100'}`}>
                 <Icon name="file-spreadsheet" size={18}/> 엑셀 다운로드
               </button>
+              <button onClick={() => setActiveTab('trash')} className={`px-5 py-3 rounded-xl text-sm font-black flex items-center gap-2 transition-all ${activeTab==='trash'?'bg-red-600 text-white shadow-md':'text-gray-500 hover:bg-gray-100'}`}>
+                <Icon name="trash-2" size={18}/> 휴지통
+              </button>
             </div>
 
             {activeTab === 'voc' && (
               <div className="w-full max-w-7xl mx-auto animate-in fade-in duration-300">
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-                  <StatusCard title="조치 대기" count={reports.filter(r=>r.status==='조치 대기').length} color="bg-orange-50 text-orange-700 border-orange-200" iconName="alert-circle"/>
-                  <StatusCard title="조치 중" count={reports.filter(r=>r.status==='조치 중').length} color="bg-yellow-50 text-yellow-700 border-yellow-200" iconName="clock"/>
-                  <StatusCard title="조치 완료" count={reports.filter(r=>r.status==='조치 완료').length} color="bg-green-50 text-green-700 border-green-200" iconName="check-circle"/>
-                  <StatusCard title="이상 없음" count={reports.filter(r=>r.status==='이상없음').length} color="bg-gray-100 text-gray-700 border-gray-300" iconName="shield-check"/>
-                  <StatusCard title="긴급 조치" count={reports.filter(r=>r.status==='긴급').length} color="bg-red-50 text-red-700 border-red-200" iconName="file-warning"/>
+                  <StatusCard title="조치 대기" count={activeReports.filter(r=>r.status==='조치 대기').length} color="bg-orange-50 text-orange-700 border-orange-200" iconName="alert-circle"/>
+                  <StatusCard title="조치 중" count={activeReports.filter(r=>r.status==='조치 중').length} color="bg-yellow-50 text-yellow-700 border-yellow-200" iconName="clock"/>
+                  <StatusCard title="조치 완료" count={activeReports.filter(r=>r.status==='조치 완료').length} color="bg-green-50 text-green-700 border-green-200" iconName="check-circle"/>
+                  <StatusCard title="이상 없음" count={activeReports.filter(r=>r.status==='이상없음').length} color="bg-gray-100 text-gray-700 border-gray-300" iconName="shield-check"/>
+                  <StatusCard title="긴급 조치" count={activeReports.filter(r=>r.status==='긴급').length} color="bg-red-50 text-red-700 border-red-200" iconName="file-warning"/>
                 </div>
 
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex flex-col lg:flex-row gap-4 items-center justify-between mb-6">
@@ -1222,10 +1242,10 @@ function App() {
                   </div>
 
                   <div className="w-full lg:w-auto shrink-0 border-t lg:border-t-0 pt-4 lg:pt-0 border-gray-100 flex flex-wrap justify-end gap-2">
-                    {/* 선택 삭제 버튼: 선택된 항목이 있을 때만 렌더링 */}
+                    {/* 휴지통 이동 버튼 */}
                     {selectedIds.length > 0 && (
                       <button onClick={handleDeleteSelected} className="bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-sm transition-colors w-full sm:w-auto">
-                        <Icon name="trash-2" size={18}/> 선택 삭제 ({selectedIds.length})
+                        <Icon name="trash-2" size={18}/> 휴지통으로 이동 ({selectedIds.length})
                       </button>
                     )}
                     <button onClick={() => { setSelected(null); setView('form'); }} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-md w-full sm:w-auto">
@@ -1362,8 +1382,87 @@ function App() {
               </div>
             )}
 
-            {activeTab === 'calendar' && <CalendarView logs={dailyLogs} reports={reports} constructions={constructions} userProfile={userProfile} showToast={toast} />}
-            {activeTab === 'excel' && <ExcelExportView reports={reports} />}
+            {activeTab === 'calendar' && <CalendarView logs={dailyLogs} reports={activeReports} constructions={constructions} userProfile={userProfile} showToast={toast} />}
+            {activeTab === 'excel' && <ExcelExportView reports={activeReports} />}
+            
+            {activeTab === 'trash' && (
+              <div className="w-full max-w-7xl mx-auto animate-in fade-in duration-300">
+                <div className="flex justify-between items-center mb-6">
+                  <div>
+                    <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2"><Icon name="trash-2" className="text-red-600"/> 휴지통</h2>
+                    <p className="text-sm text-gray-500 font-bold mt-1">삭제된 시설점검 내역입니다. (삭제 후 30일이 지나면 영구 삭제됩니다.)</p>
+                  </div>
+                  {selectedIds.length > 0 && (
+                    <div className="flex gap-2">
+                      <button onClick={async () => {
+                        if (window.confirm(`선택한 ${selectedIds.length}개의 항목을 다시 복구하시겠습니까?`)) {
+                          await Promise.all(selectedIds.map(id => db.collection(reportsPath).doc(id).update({ deleted: firebase.firestore.FieldValue.delete(), deletedAt: firebase.firestore.FieldValue.delete() })));
+                          toast('복구되었습니다.'); setSelectedIds([]);
+                        }
+                      }} className="bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 px-4 py-2.5 rounded-xl font-black flex items-center gap-2 transition-colors">
+                        <Icon name="refresh-cw" size={18}/> 선택 복구 ({selectedIds.length})
+                      </button>
+                      <button onClick={async () => {
+                        if (window.confirm(`선택한 ${selectedIds.length}개의 항목을 완전히 영구 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
+                          await Promise.all(selectedIds.map(id => db.collection(reportsPath).doc(id).delete()));
+                          toast('영구 삭제되었습니다.'); setSelectedIds([]);
+                        }
+                      }} className="bg-red-600 text-white hover:bg-red-700 px-4 py-2.5 rounded-xl font-black shadow-md flex items-center gap-2 transition-colors">
+                        <Icon name="trash-2" size={18}/> 영구 삭제 ({selectedIds.length})
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm whitespace-nowrap">
+                      <thead className="bg-red-50 border-b border-red-100 text-red-900">
+                        <tr>
+                          <th className="p-5 font-black w-12 text-center">
+                            <input type="checkbox" className="w-4 h-4 cursor-pointer accent-red-600" 
+                              checked={trashReports.length > 0 && trashReports.every(r => selectedIds.includes(r.id))} 
+                              onChange={(e) => setSelectedIds(e.target.checked ? trashReports.map(r => r.id) : [])} />
+                          </th>
+                          <th className="p-5 font-black w-32">대분류</th>
+                          <th className="p-5 font-black w-full">제목 (위치)</th>
+                          <th className="p-5 font-black w-32">삭제 일자</th>
+                          <th className="p-5 font-black w-24">점검자</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {trashReports.length === 0 ? (
+                          <tr><td colSpan="5" className="p-16 text-center text-gray-500 font-bold">휴지통이 비어있습니다.</td></tr>
+                        ) : trashReports.map(r => {
+                          const isSelected = selectedIds.includes(r.id);
+                          return (
+                            <tr key={r.id} className={`hover:bg-red-50/50 cursor-pointer transition-colors ${isSelected ? 'bg-red-50/50' : ''}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (isSelected) setSelectedIds(prev => prev.filter(i => i !== r.id));
+                                  else setSelectedIds(prev => [...prev, r.id]);
+                                }}>
+                              <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
+                                <input type="checkbox" className="w-4 h-4 cursor-pointer accent-red-600" checked={isSelected} 
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    if (e.target.checked) setSelectedIds(prev => [...prev, r.id]);
+                                    else setSelectedIds(prev => prev.filter(i => i !== r.id));
+                                  }} />
+                              </td>
+                              <td className="p-5 font-bold text-gray-600">{r.category}</td>
+                              <td className="p-5 font-black text-gray-500 line-through opacity-70">{r.title}</td>
+                              <td className="p-5 font-bold text-gray-500">{r.deletedAt ? new Date(r.deletedAt).toLocaleDateString() : '-'}</td>
+                              <td className="p-5 font-bold text-gray-500">{r.inspectorName}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
