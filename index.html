@@ -967,6 +967,9 @@ function App() {
   const [tempStatusFilter, setTempStatusFilter] = useState('');
   const [tempCategoryFilter, setTempCategoryFilter] = useState('');
 
+  // 다중 선택 상태
+  const [selectedIds, setSelectedIds] = useState([]);
+
   const toast = (msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 5000); };
 
   const handleSearch = () => {
@@ -993,6 +996,11 @@ function App() {
       alert("업데이트 중 오류 발생: " + e.message);
     }
   };
+
+  // 필터 초기화 및 탭 이동 시 선택 항목 비우기
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [activeTab, searchTerm, statusFilter, categoryFilter]);
 
   useEffect(() => {
     let isResolved = false;
@@ -1104,6 +1112,39 @@ function App() {
     return matchSearch && matchStatus && matchCategory;
   });
 
+  // --- 다중 선택 관련 기능 ---
+  const isAllSelected = filtered.length > 0 && filtered.every(r => selectedIds.includes(r.id));
+
+  const handleToggleAll = (e) => {
+    if (e.target.checked) {
+      setSelectedIds(filtered.map(r => r.id));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const handleToggleOne = (e, id) => {
+    e.stopPropagation(); // 클릭 이벤트가 행(상세보기)으로 전파되지 않도록 차단
+    if (e.target.checked) {
+      setSelectedIds(prev => [...prev, id]);
+    } else {
+      setSelectedIds(prev => prev.filter(i => i !== id));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0) return;
+    if (window.confirm(`선택한 ${selectedIds.length}개의 점검 내역을 일괄 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
+      try {
+        await Promise.all(selectedIds.map(id => db.collection(reportsPath).doc(id).delete()));
+        toast(`선택한 ${selectedIds.length}개의 항목이 성공적으로 삭제되었습니다.`);
+        setSelectedIds([]);
+      } catch (err) {
+        toast('항목 삭제 중 오류가 발생했습니다.');
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans pb-10">
       <header className="bg-slate-800 text-white shadow-md sticky top-0 z-10">
@@ -1180,7 +1221,13 @@ function App() {
                     </button>
                   </div>
 
-                  <div className="w-full lg:w-auto shrink-0 border-t lg:border-t-0 pt-4 lg:pt-0 border-gray-100 flex justify-end">
+                  <div className="w-full lg:w-auto shrink-0 border-t lg:border-t-0 pt-4 lg:pt-0 border-gray-100 flex flex-wrap justify-end gap-2">
+                    {/* 선택 삭제 버튼: 선택된 항목이 있을 때만 렌더링 */}
+                    {selectedIds.length > 0 && (
+                      <button onClick={handleDeleteSelected} className="bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-sm transition-colors w-full sm:w-auto">
+                        <Icon name="trash-2" size={18}/> 선택 삭제 ({selectedIds.length})
+                      </button>
+                    )}
                     <button onClick={() => { setSelected(null); setView('form'); }} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-md w-full sm:w-auto">
                       <Icon name="plus" size={18}/> 신규 등록
                     </button>
@@ -1192,6 +1239,15 @@ function App() {
                     <table className="w-full text-left text-sm whitespace-nowrap">
                       <thead className="bg-gray-100 border-b border-gray-200 text-gray-700">
                         <tr>
+                          {/* 전체 선택 체크박스 열 */}
+                          <th className="p-5 font-black w-12 text-center">
+                            <input 
+                              type="checkbox" 
+                              className="w-4 h-4 cursor-pointer accent-blue-600" 
+                              checked={isAllSelected} 
+                              onChange={handleToggleAll} 
+                            />
+                          </th>
                           <th className="p-5 font-black w-32 text-center">진행상태</th>
                           <th className="p-5 font-black w-24">층수</th>
                           <th className="p-5 font-black">대분류</th>
@@ -1202,11 +1258,21 @@ function App() {
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {filtered.length === 0 ? (
-                          <tr><td colSpan="6" className="p-16 text-center text-gray-500 font-bold">등록된 점검 내역이 없습니다.</td></tr>
+                          <tr><td colSpan="7" className="p-16 text-center text-gray-500 font-bold">등록된 점검 내역이 없습니다.</td></tr>
                         ) : filtered.map(r => {
                           const isEmergency = r.status === '긴급';
+                          const isSelected = selectedIds.includes(r.id);
                           return (
-                            <tr key={r.id} onClick={() => { setSelected(r); setView('detail'); }} className={`hover:bg-blue-50 cursor-pointer transition-colors group ${isEmergency ? 'bg-red-50/30' : ''}`}>
+                            <tr key={r.id} onClick={() => { setSelected(r); setView('detail'); }} className={`hover:bg-blue-50 cursor-pointer transition-colors group ${isEmergency ? 'bg-red-50/30' : ''} ${isSelected ? 'bg-blue-50/50' : ''}`}>
+                              {/* 개별 선택 체크박스 열 */}
+                              <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
+                                <input 
+                                  type="checkbox" 
+                                  className="w-4 h-4 cursor-pointer accent-blue-600" 
+                                  checked={isSelected} 
+                                  onChange={(e) => handleToggleOne(e, r.id)} 
+                                />
+                              </td>
                               <td className="p-5 text-center">
                                 <span className={`px-4 py-1.5 rounded-full text-xs font-black border shadow-sm ${
                                   r.status==='조치 완료'?'bg-green-100 text-green-700 border-green-200':
