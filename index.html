@@ -282,12 +282,13 @@ function ExcelExportView({ reports }) {
               const ext = mimeMatch ? mimeMatch[1] : 'jpeg';
               const imageId = workbook.addImage({ base64: p, extension: ext });
               
-              const colOffset = 5.1 + pIdx;
-              
+              const startCol = 5 + pIdx; 
+              const startRow = index + 1; // 첫 번째 데이터 행은 엑셀에서 2행이므로 앵커 인덱스는 1
+
               sheet.addImage(imageId, {
-                tl: { col: colOffset, row: index + 1.1 }, 
-                ext: { width: 150, height: 150 },  
-                editAs: 'oneCell'                  
+                tl: { col: startCol + 0.05, row: startRow + 0.05 }, // 셀 좌상단 (약간의 여백)
+                br: { col: startCol + 1 - 0.05, row: startRow + 1 - 0.05 }, // 셀 우하단 (약간의 여백)
+                editAs: 'twoCell' // 셀과 함께 이동하며 크기 조절됨 (셀 안에 배치되는 효과)
               });
             } catch(e) {
               row.getCell(6 + pIdx).value = "이미지 오류";
