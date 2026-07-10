@@ -282,13 +282,17 @@ function ExcelExportView({ reports }) {
               const ext = mimeMatch ? mimeMatch[1] : 'jpeg';
               const imageId = workbook.addImage({ base64: p, extension: ext });
               
+              // 엑셀JS 앵커 인덱스 지정 (0부터 시작)
               const startCol = 5 + pIdx; 
-              const startRow = index + 1; // 첫 번째 데이터 행은 엑셀에서 2행이므로 앵커 인덱스는 1
+              const startRow = index + 1; // Header가 row 0, 첫번째 데이터가 row 1 위치가 됨
 
+              // 엑셀 "셀에 배치" 데이터타입 자체는 ExcelJS에서 미지원이나,
+              // tl(Top-Left)과 br(Bottom-Right)을 정수 단위로 정확히 설정하여
+              // 셀 안에서 벗어나는 여백 없이 정확하게 밀착(snap)되도록 구성
               sheet.addImage(imageId, {
-                tl: { col: startCol + 0.05, row: startRow + 0.05 }, // 셀 좌상단 (약간의 여백)
-                br: { col: startCol + 1 - 0.05, row: startRow + 1 - 0.05 }, // 셀 우하단 (약간의 여백)
-                editAs: 'twoCell' // 셀과 함께 이동하며 크기 조절됨 (셀 안에 배치되는 효과)
+                tl: { col: startCol, row: startRow },
+                br: { col: startCol + 1, row: startRow + 1 },
+                editAs: 'twoCell' // 셀과 함께 이동 및 크기 조절이 되도록 설정
               });
             } catch(e) {
               row.getCell(6 + pIdx).value = "이미지 오류";
