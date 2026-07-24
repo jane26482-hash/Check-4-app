@@ -64,7 +64,8 @@ const logsPath = 'dailyLogs';
 const constLogsPath = 'constructionLogs';
 const userPath = (uid) => `users/${uid}`;
 
-const CATEGORIES = ['경기 중 시설 VOC', '일일 화재점검', '일일 안전 및 시설 점검', '긴급화재안전점검(6/2~6/3)', '행사 점검'];
+// (7/24)긴급화재점검 카테고리 추가
+const CATEGORIES = ['경기 중 시설 VOC', '일일 화재점검', '일일 안전 및 시설 점검', '긴급화재안전점검(6/2~6/3)', '행사 점검', '(7/24)긴급화재점검'];
 const TRADES = ['전기', '소방', '기계', '건축', '안전'];
 const STATUSES = ['조치 대기', '조치 중', '조치 완료', '이상없음', '긴급'];
 const LOG_CATEGORIES = ['일일 시설안전 점검', '일일 화재점검'];
@@ -1208,6 +1209,7 @@ function App() {
               </button>
             </div>
 
+            {}
             {activeTab === 'voc' && (
               <div className="w-full max-w-7xl mx-auto animate-in fade-in duration-300">
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
@@ -1323,6 +1325,7 @@ function App() {
               </div>
             )}
 
+            {}
             {activeTab === 'construction' && (
               <div className="w-full max-w-7xl mx-auto animate-in fade-in duration-300">
                 <div className="flex justify-between items-center mb-6">
@@ -1390,6 +1393,7 @@ function App() {
             {activeTab === 'calendar' && <CalendarView logs={dailyLogs} reports={activeReports} constructions={constructions} userProfile={userProfile} showToast={toast} />}
             {activeTab === 'excel' && <ExcelExportView reports={activeReports} />}
             
+            {}
             {activeTab === 'trash' && (
               <div className="w-full max-w-7xl mx-auto animate-in fade-in duration-300">
                 <div className="flex justify-between items-center mb-6">
