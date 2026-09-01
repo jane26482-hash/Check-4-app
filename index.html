@@ -14,9 +14,10 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <!-- Firebase Storage 추가 -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
-  
   <script src="https://unpkg.com/lucide@latest"></script>
   
   <style>
@@ -25,8 +26,6 @@
     @keyframes pulse{50%{opacity:.5}}
     .animate-pulse{animation:pulse 2s cubic-bezier(.4,0,.6,1) infinite}
     body { background-color: #f8fafc; }
-    
-    /* 스크롤바 숨기기 (캘린더 셀 용) */
     .scrollbar-hide::-webkit-scrollbar { display: none; }
     .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
   </style>
@@ -35,7 +34,6 @@
   <div id="root"></div>
 
 <script>
-  // 1. Firebase 초기화 설정
   const firebaseConfig = {
     apiKey: "AIzaSyAoVGRAKKfCr-IEh7s4HVCc8r5wpeWUv0Q",
     authDomain: "check-calendar-app-2fd92.firebaseapp.com",
@@ -51,6 +49,7 @@
   }
   window.__fbAuth = firebase.auth();
   window.__fbDb = firebase.firestore();
+  window.__fbStorage = firebase.storage(); // Storage 초기화
 </script>
 
 <script type="text/babel" data-presets="react" data-type="module">
@@ -58,13 +57,13 @@ const { useState, useEffect, useRef } = React;
 
 const auth = window.__fbAuth;
 const db   = window.__fbDb;
+const storage = window.__fbStorage; // Storage 객체
 
 const reportsPath = 'reports';
 const logsPath = 'dailyLogs';
 const constLogsPath = 'constructionLogs';
 const userPath = (uid) => `users/${uid}`;
 
-// (7/24)긴급화재점검 카테고리 추가
 const CATEGORIES = ['경기 중 시설 VOC', '일일 화재점검', '일일 안전 및 시설 점검', '긴급화재안전점검(6/2~6/3)', '행사 점검', '(7/24)긴급화재점검'];
 const TRADES = ['전기', '소방', '기계', '건축', '안전'];
 const STATUSES = ['조치 대기', '조치 중', '조치 완료', '이상없음', '긴급'];
@@ -79,7 +78,6 @@ const FLOOR_IMAGES = {
   '지하 4층': './imagesmap_b4.png',
 };
 
-// --- 아이콘 컴포넌트 ---
 function Icon({ name, size = 24, className = '' }) {
   const ref = useRef(null);
   useEffect(() => {
@@ -90,7 +88,6 @@ function Icon({ name, size = 24, className = '' }) {
   return <span ref={ref} className={`inline-flex items-center justify-center ${className}`}><i data-lucide={name} style={{width: size, height: size}}></i></span>;
 }
 
-// --- 공용 모달 컴포넌트 ---
 function ConfirmModal({ title, message, onConfirm, onCancel }) {
   return (
     <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[100] p-4">
@@ -109,39 +106,19 @@ function ConfirmModal({ title, message, onConfirm, onCancel }) {
   );
 }
 
-// --- 층별 도면 뷰어 ---
 function FloorPlanMap({ floor, location, onChange }) {
   const imageUrl = FLOOR_IMAGES[floor] || FLOOR_IMAGES['지상'];
 
   return (
     <div className="relative w-full h-[400px] bg-slate-100 rounded-xl overflow-hidden shadow-inner group select-none cursor-crosshair border border-gray-300 flex items-center justify-center">
-      <img 
-        src={imageUrl} 
-        alt={`${floor} 도면`} 
-        className="w-full h-full object-contain pointer-events-none" 
-        onError={(e) => { 
-          e.target.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9IiNlNWU1ZTUiLz48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1zaXplPSIyMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzk5OSI+7J2066+47KeAIOyXhuCdmCjGjOydvOydhCDtmZXtnaXtlbTso8jsl5QpPC90ZXh0Pjwvc3ZnPg=='; 
-        }} 
-      />
-      
+      <img src={imageUrl} alt={`${floor} 도면`} className="w-full h-full object-contain pointer-events-none" 
+        onError={(e) => { e.target.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9IiNlNWU1ZTUiLz48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1zaXplPSIyMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzk5OSI+7J2066+47KeAIOyXhuCdmCjGjOydvOydhCDtmZXtnaXtlbTso8jsl5QpPC90ZXh0Pjwvc3ZnPg=='; }} />
       <div className="absolute inset-0 bg-black/0 hover:bg-black/5 transition-colors z-10" onClick={(e) => {
           if (!onChange) return;
           const rect = e.currentTarget.getBoundingClientRect();
           onChange({ x: ((e.clientX - rect.left) / rect.width) * 100, y: ((e.clientY - rect.top) / rect.height) * 100 });
         }}>
-        {location && (
-          <span className="absolute -translate-x-1/2 -translate-y-full pointer-events-none" style={{ left: `${location.x}%`, top: `${location.y}%` }}>
-            <Icon name="map-pin" size={42} className="text-red-500 drop-shadow-md" />
-          </span>
-        )}
-        {!location && onChange && (
-          <div className="absolute top-4 left-4 bg-black/80 text-white text-sm font-bold px-4 py-2.5 rounded-lg shadow-md opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
-            도면의 원하는 위치를 클릭하여 핀을 꽂아주세요.
-          </div>
-        )}
-      </div>
-      <div className="absolute bottom-4 right-4 bg-white/90 backdrop-blur border border-gray-200 text-slate-800 text-sm font-black px-4 py-2 rounded-lg shadow-sm z-0 pointer-events-none">
-        현재 선택된 층: {floor}
+        {location && (<span className="absolute -translate-x-1/2 -translate-y-full pointer-events-none" style={{ left: `${location.x}%`, top: `${location.y}%` }}><Icon name="map-pin" size={42} className="text-red-500 drop-shadow-md" /></span>)}
       </div>
     </div>
   );
@@ -159,7 +136,6 @@ function StatusCard({ title, count, color, iconName }) {
   );
 }
 
-// --- 사용자 등록 컴포넌트 ---
 function RegisterForm({ user, setProfile, setView, showToast }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -199,7 +175,6 @@ function RegisterForm({ user, setProfile, setView, showToast }) {
   );
 }
 
-// --- 엑셀로 내보내기 탭 ---
 function ExcelExportView({ reports }) {
   const getSixMonthsAgo = () => {
     const d = new Date(); d.setMonth(d.getMonth() - 6); return d.toISOString().split('T')[0];
@@ -214,6 +189,24 @@ function ExcelExportView({ reports }) {
   const [isExporting, setIsExporting] = useState(false);
   
   const sixMonthsLimit = getSixMonthsAgo();
+
+  // Storage URL 이미지를 Base64로 가져오는 헬퍼 함수
+  const getBase64FromUrl = async (url) => {
+    if (url.startsWith('data:image')) return url;
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      console.warn('이미지 로드 실패 (CORS 문제일 수 있음):', e);
+      return null;
+    }
+  };
 
   const handleExport = async () => {
     if (!window.ExcelJS) {
@@ -239,25 +232,27 @@ function ExcelExportView({ reports }) {
       const sheet = workbook.addWorksheet('점검내역');
 
       sheet.columns = [
-        { header: '점검일자', key: 'date', width: 15 },           // 1
-        { header: '대분류', key: 'category', width: 25 },       // 2
-        { header: '공종', key: 'trade', width: 12 },            // 3
-        { header: '점검자', key: 'inspectorName', width: 15 },  // 4
-        { header: '상태', key: 'status', width: 15 },           // 5
-        { header: '현장사진1', key: 'photo1', width: 25 },       // 6
-        { header: '현장사진2', key: 'photo2', width: 25 },       // 7
-        { header: '현장사진3', key: 'photo3', width: 25 },       // 8
-        { header: '층수', key: 'floor', width: 12 },            // 9
-        { header: '상세위치', key: 'locationDesc', width: 30 }, // 10
-        { header: '사진설명', key: 'photoDesc', width: 40 },    // 11
-        { header: '비고', key: 'remarks', width: 30 }           // 12
+        { header: '점검일자', key: 'date', width: 15 },
+        { header: '대분류', key: 'category', width: 25 },
+        { header: '공종', key: 'trade', width: 12 },
+        { header: '점검자', key: 'inspectorName', width: 15 },
+        { header: '상태', key: 'status', width: 15 },
+        { header: '현장사진1', key: 'photo1', width: 25 },
+        { header: '현장사진2', key: 'photo2', width: 25 },
+        { header: '현장사진3', key: 'photo3', width: 25 },
+        { header: '층수', key: 'floor', width: 12 },
+        { header: '상세위치', key: 'locationDesc', width: 30 },
+        { header: '사진설명', key: 'photoDesc', width: 40 },
+        { header: '비고', key: 'remarks', width: 30 }
       ];
 
       sheet.getRow(1).font = { bold: true, size: 12 };
       sheet.getRow(1).alignment = { horizontal: 'center', vertical: 'middle' };
       sheet.getRow(1).height = 30;
 
-      filtered.forEach((r, index) => {
+      // 비동기 이미지 로드를 위해 for...of 사용
+      for (let index = 0; index < filtered.length; index++) {
+        const r = filtered[index];
         const row = sheet.addRow({
           date: r.date || '',
           category: r.category || '',
@@ -276,33 +271,37 @@ function ExcelExportView({ reports }) {
         
         if (photos.length > 0) {
           row.height = 130; 
-          photos.forEach((p, pIdx) => {
-            if (pIdx > 2) return; // 최대 3장
+          
+          for (let pIdx = 0; pIdx < photos.length; pIdx++) {
+            if (pIdx > 2) break; // 최대 3장
+            
             try {
-              const mimeMatch = p.match(/data:image\/(.*);base64/);
-              const ext = mimeMatch ? mimeMatch[1] : 'jpeg';
-              const imageId = workbook.addImage({ base64: p, extension: ext });
-              
-              // 엑셀JS 앵커 인덱스 지정 (0부터 시작)
-              const startCol = 5 + pIdx; 
-              const startRow = index + 1; // Header가 row 0, 첫번째 데이터가 row 1 위치가 됨
+              // URL을 Base64로 변환하여 엑셀에 삽입
+              const base64Data = await getBase64FromUrl(photos[pIdx]);
+              if (base64Data) {
+                const mimeMatch = base64Data.match(/data:image\/(.*);base64/);
+                const ext = mimeMatch ? mimeMatch[1] : 'jpeg';
+                const imageId = workbook.addImage({ base64: base64Data, extension: ext });
+                
+                const startCol = 5 + pIdx; 
+                const startRow = index + 1;
 
-              // 엑셀 "셀에 배치" 데이터타입 자체는 ExcelJS에서 미지원이나,
-              // tl(Top-Left)과 br(Bottom-Right)을 정수 단위로 정확히 설정하여
-              // 셀 안에서 벗어나는 여백 없이 정확하게 밀착(snap)되도록 구성
-              sheet.addImage(imageId, {
-                tl: { col: startCol, row: startRow },
-                br: { col: startCol + 1, row: startRow + 1 },
-                editAs: 'twoCell' // 셀과 함께 이동 및 크기 조절이 되도록 설정
-              });
+                sheet.addImage(imageId, {
+                  tl: { col: startCol, row: startRow },
+                  br: { col: startCol + 1, row: startRow + 1 },
+                  editAs: 'twoCell'
+                });
+              } else {
+                row.getCell(6 + pIdx).value = "이미지 로드 실패";
+              }
             } catch(e) {
               row.getCell(6 + pIdx).value = "이미지 오류";
             }
-          });
+          }
         } else {
           row.getCell(6).value = "사진 없음";
         }
-      });
+      }
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -343,15 +342,6 @@ function ExcelExportView({ reports }) {
         </div>
       </div>
 
-      <div className="flex gap-3 mb-8">
-        <button onClick={() => {
-          const d = new Date(); const day = d.getDay(); const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-          setStartDate(new Date(d.setDate(diff)).toISOString().split('T')[0]);
-          setEndDate(getToday());
-        }} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-bold text-gray-700 transition-colors">이번 주</button>
-        <button onClick={() => { setStartDate(getStartOfMonth()); setEndDate(getToday()); }} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-bold text-gray-700 transition-colors">이번 달</button>
-      </div>
-
       <button onClick={handleExport} disabled={isExporting} className="w-full bg-green-600 hover:bg-green-700 text-white font-black py-5 rounded-xl shadow-md transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 text-lg">
         {isExporting ? <><Icon name="clock" size={24} className="animate-spin" /> 파일 생성 중...</> : <><Icon name="download" size={24}/> 설정한 기간 데이터 엑셀 다운로드</>}
       </button>
@@ -359,7 +349,6 @@ function ExcelExportView({ reports }) {
   );
 }
 
-// --- 일일 일지 (캘린더) 컴포넌트 ---
 function CalendarView({ logs, reports, constructions, userProfile, showToast }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -431,41 +420,32 @@ function CalendarView({ logs, reports, constructions, userProfile, showToast }) 
               className={`bg-white cursor-pointer flex flex-col group relative overflow-hidden ${isToday ? 'min-h-[160px] md:min-h-[220px] border-[3px] border-blue-500 shadow-xl z-10 p-2 md:p-3 ring-4 ring-blue-100/50 scale-[1.02]' : 'min-h-[160px] p-2 hover:bg-blue-50/50'}`}>
               <div className="flex justify-between items-start mb-2 shrink-0">
                 <span className={`text-sm md:text-base font-black flex items-center justify-center rounded-full ${isToday ? 'bg-blue-600 text-white w-8 h-8' : 'w-7 h-7 text-slate-700 group-hover:text-blue-600'}`}>{day}</span>
-                <span className="opacity-0 group-hover:opacity-100 text-blue-400 p-0.5"><Icon name="plus" size={16}/></span>
               </div>
               <div className="flex flex-col gap-1.5 flex-1 overflow-y-auto pr-1 scrollbar-hide">
-                
                 {hasReport && (
                   <div className="bg-blue-100 text-blue-700 text-[11px] font-black px-2 py-1.5 rounded-md border border-blue-200 flex items-center gap-1 shadow-sm shrink-0">
                     <Icon name="check-circle" size={14}/> 일일점검 완료
                   </div>
                 )}
-
                 {dayExpectedConsts.map(c => (
                   <div key={`exp-${c.id}`} className="bg-amber-100 text-amber-800 text-[11px] font-black px-2 py-1.5 rounded-md border border-amber-200 flex items-center gap-1 shadow-sm shrink-0 truncate" title={`${c.title} - 공사 예정`}>
-                    <Icon name="siren" size={12} className="text-red-500 animate-pulse shrink-0"/> 
-                    <span className="truncate">{c.title} - 공사 예정</span>
+                    <Icon name="siren" size={12} className="text-red-500 animate-pulse shrink-0"/> <span className="truncate">{c.title}</span>
                   </div>
                 ))}
-
                 {dayCompletedConsts.map(c => (
                   <div key={`com-${c.id}`} className="bg-green-100 text-green-800 text-[11px] font-black px-2 py-1.5 rounded-md border border-green-200 flex items-center gap-1 shadow-sm shrink-0 truncate" title={`${c.title} - 공사 완료`}>
-                    <Icon name="check-circle" size={12} className="shrink-0"/> 
-                    <span className="truncate">{c.title} - 공사 완료</span>
+                    <Icon name="check-circle" size={12} className="shrink-0"/> <span className="truncate">{c.title}</span>
                   </div>
                 ))}
-
                 {dayLogs.map(log => (
                   <div key={log.id} className={`relative group/log px-2 py-2.5 rounded-lg border-l-4 shadow-sm shrink-0 ${log.category==='일일 시설안전 점검'?'bg-slate-50 border-blue-400':'bg-slate-50 border-red-400'}`}>
                     <button onClick={e => { e.stopPropagation(); setDeleteTargetId(log.id); }} className="absolute top-1.5 right-1.5 opacity-0 group-hover/log:opacity-100 bg-red-50 text-red-600 rounded p-1 hover:bg-red-600 hover:text-white z-20"><Icon name="trash-2" size={12}/></button>
                     <div className="flex flex-col gap-0.5 pr-5">
                       <span className="text-[11px] xl:text-xs font-black text-slate-800 leading-tight">{log.category}</span>
                       <span className="text-[10px] xl:text-[11px] font-bold text-slate-600 mt-0.5">-{log.location}</span>
-                      <span className="text-[10px] xl:text-[11px] font-bold text-slate-600">-{log.inspectorName}</span>
                     </div>
                   </div>
                 ))}
-
               </div>
             </div>
           );
@@ -521,9 +501,7 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
     const availableSlots = 3 - formData.photos.length;
     const filesToProcess = files.slice(0, availableSlots);
 
-    if (files.length > availableSlots) {
-      showToast('사진은 최대 3장까지만 첨부할 수 있습니다.');
-    }
+    if (files.length > availableSlots) showToast('사진은 최대 3장까지만 첨부할 수 있습니다.');
 
     filesToProcess.forEach(file => {
       const reader = new FileReader();
@@ -551,9 +529,22 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
     }
     setSubmit(true);
     try {
+      // 1. Firebase Storage에 Base64 이미지를 업로드하고 URL을 받아옵니다.
+      const uploadedPhotos = await Promise.all(formData.photos.map(async (photo) => {
+        // 이미지가 Base64인 경우에만 업로드 (기존 URL인 경우 제외)
+        if (photo.startsWith('data:image')) {
+          const filename = `reports/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.jpg`;
+          const imageRef = storage.ref().child(filename);
+          await imageRef.putString(photo, 'data_url');
+          return await imageRef.getDownloadURL();
+        }
+        return photo; 
+      }));
+
       const autoTitle = `[${formData.category}] ${formData.locationDesc ? formData.locationDesc + ' 점검' : '점검 내역'}`;
       const isEmerg = formData.status === '긴급';
-      const data = { ...formData, photoBase64: formData.photos[0], title: autoTitle, isEmergency: isEmerg, updatedAt: Date.now() };
+      // URL 배열로 교체하여 저장
+      const data = { ...formData, photos: uploadedPhotos, photoBase64: uploadedPhotos[0], title: autoTitle, isEmergency: isEmerg, updatedAt: Date.now() };
       delete data.id;
 
       if (existingData) { 
@@ -565,7 +556,8 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
 
       showToast('성공적으로 저장되었습니다.'); 
       onSave();
-    } catch(err) { 
+    } catch(err) {
+      console.error(err);
       setError('저장 중 오류가 발생했습니다.'); 
     } finally { 
       setSubmit(false); 
@@ -583,7 +575,6 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
             <div><label className="block text-sm font-bold mb-2">대분류</label><select className="w-full p-3 border rounded-xl bg-gray-50 font-bold" value={formData.category} onChange={e => set('category', e.target.value)}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
             <div className="col-span-2"><label className="block text-sm font-bold mb-2">공종 분류</label><select className="w-full p-3 border rounded-xl bg-gray-50 font-bold" value={formData.trade} onChange={e => set('trade', e.target.value)}>{TRADES.map(t => <option key={t}>{t}</option>)}</select></div>
           </div>
-          
           <div className="grid grid-cols-2 gap-4">
             <div><label className="block text-sm font-bold mb-2">점검 날짜</label><input type="date" className="w-full p-3 border rounded-xl bg-gray-50 font-bold" value={formData.date} onChange={e => set('date', e.target.value)} /></div>
             <div><label className="block text-sm font-bold mb-2">점검자</label><input disabled className="w-full p-3 border rounded-xl bg-gray-100 font-bold" value={formData.inspectorName} /></div>
@@ -626,7 +617,6 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
             </div>
           </div>
           <div><label className="block text-sm font-bold mb-2">사진 상세 설명</label><textarea className="w-full p-3.5 border rounded-xl bg-gray-50 font-medium h-24 resize-none" value={formData.photoDesc} onChange={e => set('photoDesc', e.target.value)} /></div>
-          
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
             <div className="flex items-center justify-between mb-3">
               <label className="text-sm font-bold flex items-center gap-2"><Icon name="map-pin" className="text-blue-600"/> 층별 도면 위치 지정 (선택)</label>
@@ -636,7 +626,6 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
             </div>
             <FloorPlanMap floor={formData.floor} location={formData.location} onChange={loc => set('location', loc)} />
           </div>
-
           <div><label className="block text-sm font-bold mb-2">상세 위치 설명</label><input className="w-full p-3.5 border rounded-xl bg-gray-50 font-bold" value={formData.locationDesc} onChange={e => set('locationDesc', e.target.value)} placeholder="예: 야구장 1루측 내야석 출입구 인근" /></div>
           <div><label className="block text-sm font-bold mb-2">비고</label><textarea className="w-full p-3.5 border rounded-xl bg-gray-50 font-medium h-28 resize-none" value={formData.remarks} onChange={e => set('remarks', e.target.value)} /></div>
         </div>
@@ -645,7 +634,7 @@ function ReportForm({ userProfile, existingData, onSave, onCancel, showToast }) 
         <button onClick={onCancel} className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 font-black rounded-xl transition-colors">취소</button>
         <button onClick={submit} disabled={isSubmitting !== false} className="flex-[2] py-4 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl disabled:opacity-50 transition-colors shadow-md active:scale-95 flex justify-center items-center gap-2">
           {isSubmitting ? (
-            <><Icon name="clock" size={20} className="animate-spin" /> 저장 처리 중...</>
+            <><Icon name="clock" size={20} className="animate-spin" /> 사진 업로드 및 저장 중...</>
           ) : '저장 완료하기'}
         </button>
       </div>
@@ -657,13 +646,11 @@ function ReportDetail({ report, userProfile, onEdit, onDelete, showToast }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const doDelete = async () => { 
     try { 
-      // 삭제 대신 휴지통으로 이동(Soft Delete)
       await db.collection(reportsPath).doc(report.id).update({ deleted: true, deletedAt: Date.now() }); 
       showToast('휴지통으로 이동되었습니다.'); 
       onDelete(); 
     } catch { showToast('삭제 오류'); } 
   };
-  
   const photos = report.photos || (report.photoBase64 ? [report.photoBase64] : []);
 
   return (
@@ -730,33 +717,23 @@ function ReportDetail({ report, userProfile, onEdit, onDelete, showToast }) {
 
 function ConstructionForm({ userProfile, existingData, onSave, onCancel, showToast }) {
   const getToday = () => new Date().toISOString().split('T')[0];
-  
-  const initialData = existingData ? {
-    ...existingData,
-    photos: existingData.photos || []
-  } : {
+  const initialData = existingData ? { ...existingData, photos: existingData.photos || [] } : {
     title: '', locationDesc: '', trade: TRADES[0], 
     receiveDate: getToday(), constructionDate: getToday(), 
-    status: '공사예정', expectedDate: getToday(), completedDate: '',
-    photos: []
+    status: '공사예정', expectedDate: getToday(), completedDate: '', photos: []
   };
 
   const [formData, setFormData] = useState(initialData);
   const [isSubmitting, setSubmit] = useState(false);
   const [error, setError] = useState('');
-  
   const set = (f, v) => { setFormData(p => ({...p, [f]: v})); if(error) setError(''); };
 
   const uploadImages = (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
-    
     const availableSlots = 3 - formData.photos.length;
     const filesToProcess = files.slice(0, availableSlots);
-
-    if (files.length > availableSlots) {
-      showToast('사진은 최대 3장까지만 첨부할 수 있습니다.');
-    }
+    if (files.length > availableSlots) showToast('사진은 최대 3장까지만 첨부할 수 있습니다.');
 
     filesToProcess.forEach(file => {
       const reader = new FileReader();
@@ -784,7 +761,18 @@ function ConstructionForm({ userProfile, existingData, onSave, onCancel, showToa
     }
     setSubmit(true);
     try {
-      const data = { ...formData, authorName: userProfile.name, authorUid: userProfile.uid, updatedAt: Date.now() };
+      // Firebase Storage에 사진 업로드
+      const uploadedPhotos = await Promise.all(formData.photos.map(async (photo) => {
+        if (photo.startsWith('data:image')) {
+          const filename = `constructions/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.jpg`;
+          const imageRef = storage.ref().child(filename);
+          await imageRef.putString(photo, 'data_url');
+          return await imageRef.getDownloadURL();
+        }
+        return photo; 
+      }));
+
+      const data = { ...formData, photos: uploadedPhotos, authorName: userProfile.name, authorUid: userProfile.uid, updatedAt: Date.now() };
       delete data.id;
 
       if (existingData) {
@@ -796,6 +784,7 @@ function ConstructionForm({ userProfile, existingData, onSave, onCancel, showToa
       showToast('공사일지가 성공적으로 저장되었습니다.');
       onSave();
     } catch(e) {
+      console.error(e);
       setError('저장 중 오류가 발생했습니다.');
     } finally {
       setSubmit(false);
@@ -813,7 +802,6 @@ function ConstructionForm({ userProfile, existingData, onSave, onCancel, showToa
           <div><label className="block text-sm font-bold mb-2">공사 위치 *</label><input type="text" className="w-full p-3.5 border rounded-xl bg-gray-50 font-bold focus:ring-2 focus:ring-amber-500" value={formData.locationDesc} onChange={e => set('locationDesc', e.target.value)} placeholder="예: 지하 1층 주차장" /></div>
           <div><label className="block text-sm font-bold mb-2">공종</label><select className="w-full p-3.5 border rounded-xl bg-gray-50 font-bold focus:ring-2 focus:ring-amber-500" value={formData.trade} onChange={e => set('trade', e.target.value)}>{TRADES.map(t => <option key={t}>{t}</option>)}</select></div>
         </div>
-        
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div><label className="block text-sm font-bold mb-2">공문 수신일</label><input type="date" className="w-full p-3.5 border rounded-xl bg-gray-50 font-bold focus:ring-2 focus:ring-amber-500" value={formData.receiveDate} onChange={e => set('receiveDate', e.target.value)} /></div>
           <div><label className="block text-sm font-bold mb-2">공사일</label><input type="date" className="w-full p-3.5 border rounded-xl bg-gray-50 font-bold focus:ring-2 focus:ring-amber-500" value={formData.constructionDate} onChange={e => set('constructionDate', e.target.value)} /></div>
@@ -853,27 +841,19 @@ function ConstructionForm({ userProfile, existingData, onSave, onCancel, showToa
               <span className="font-black text-green-700">공사완료</span>
             </label>
           </div>
-
           <div className="bg-white p-4 rounded-lg border">
             {formData.status === '공사예정' ? (
-              <div>
-                <label className="block text-sm font-bold mb-2 text-amber-800">공사 예정 날짜</label>
-                <input type="date" className="w-full p-3 border rounded-lg bg-amber-50/50 font-bold focus:ring-2 focus:ring-amber-500" value={formData.expectedDate} onChange={e => set('expectedDate', e.target.value)} />
-              </div>
+              <div><label className="block text-sm font-bold mb-2 text-amber-800">공사 예정 날짜</label><input type="date" className="w-full p-3 border rounded-lg bg-amber-50/50 font-bold focus:ring-2 focus:ring-amber-500" value={formData.expectedDate} onChange={e => set('expectedDate', e.target.value)} /></div>
             ) : (
-              <div>
-                <label className="block text-sm font-bold mb-2 text-green-800">실제 공사 완료 날짜</label>
-                <input type="date" className="w-full p-3 border rounded-lg bg-green-50/50 font-bold focus:ring-2 focus:ring-green-500" value={formData.completedDate} onChange={e => set('completedDate', e.target.value)} />
-              </div>
+              <div><label className="block text-sm font-bold mb-2 text-green-800">실제 공사 완료 날짜</label><input type="date" className="w-full p-3 border rounded-lg bg-green-50/50 font-bold focus:ring-2 focus:ring-green-500" value={formData.completedDate} onChange={e => set('completedDate', e.target.value)} /></div>
             )}
           </div>
         </div>
       </div>
-
       <div className="flex gap-4 mt-8 pt-6 border-t">
         <button onClick={onCancel} className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 font-black rounded-xl transition-colors">취소</button>
         <button onClick={submit} disabled={isSubmitting !== false} className="flex-[2] py-4 bg-amber-600 hover:bg-amber-700 text-white font-black rounded-xl disabled:opacity-50 transition-colors shadow-md active:scale-95 flex justify-center items-center gap-2">
-          {isSubmitting ? <><Icon name="clock" size={20} className="animate-spin" /> 저장 처리 중...</> : '저장 완료하기'}
+          {isSubmitting ? <><Icon name="clock" size={20} className="animate-spin" /> 사진 업로드 및 저장 중...</> : '저장 완료하기'}
         </button>
       </div>
     </div>
@@ -954,7 +934,6 @@ function ConstructionDetail({ constData, onEdit, onDelete, showToast }) {
   );
 }
 
-// ── App 시작 부분 ─────────────────────────────────────────────────────────────
 function App() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
@@ -979,7 +958,6 @@ function App() {
   const [tempStatusFilter, setTempStatusFilter] = useState('');
   const [tempCategoryFilter, setTempCategoryFilter] = useState('');
 
-  // 다중 선택 상태
   const [selectedIds, setSelectedIds] = useState([]);
 
   const toast = (msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 5000); };
@@ -990,26 +968,6 @@ function App() {
     setCategoryFilter(tempCategoryFilter);
   };
 
-  const handleMigration = async () => {
-    if (!window.confirm("데이터베이스의 모든 '조치 예정' 글들을 '조치 대기'로 일괄 변경하시겠습니까?")) return;
-    try {
-      const snap = await db.collection(reportsPath).where('status', '==', '조치 예정').get();
-      if (snap.empty) {
-        alert("변경할 데이터가 없습니다 (이미 모두 수정됨).");
-        return;
-      }
-      const batch = db.batch();
-      snap.docs.forEach(doc => {
-        batch.update(doc.ref, { status: '조치 대기' });
-      });
-      await batch.commit();
-      alert(`총 ${snap.size}개의 데이터가 '조치 대기'로 성공적으로 업데이트 되었습니다!`);
-    } catch(e) {
-      alert("업데이트 중 오류 발생: " + e.message);
-    }
-  };
-
-  // 필터 초기화 및 탭 이동 시 선택 항목 비우기
   useEffect(() => {
     setSelectedIds([]);
   }, [activeTab, searchTerm, statusFilter, categoryFilter]);
@@ -1024,9 +982,7 @@ function App() {
     }, 5000);
 
     const checkAuth = async () => {
-      try {
-        await auth.signInAnonymously();
-      } catch (err) {
+      try { await auth.signInAnonymously(); } catch (err) {
         isResolved = true;
         clearTimeout(fallbackTimer);
         setAuthError(`로그인 오류가 발생했습니다: ${err.message}`);
@@ -1043,14 +999,12 @@ function App() {
         try {
           const snap = await db.collection('users').doc(u.uid).get();
           if (snap.exists) {
-            setUserProfile(snap.data());
-            setView('dashboard');
+            setUserProfile(snap.data()); setView('dashboard');
           } else {
             setView('register');
           }
         } catch (err) {
-          setAuthError(`데이터베이스 접속 오류입니다.`);
-          setView('error');
+          setAuthError(`데이터베이스 접속 오류입니다.`); setView('error');
         }
       }
     });
@@ -1061,30 +1015,24 @@ function App() {
   useEffect(() => {
     if (!user || !userProfile) return;
     const sixMonthsMs = 15552000000;
-    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000; // 30일
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
 
     const unsubReports = db.collection(reportsPath).onSnapshot(snap => {
-      const now = Date.now();
-      const validData = [];
+      const now = Date.now(); const validData = [];
       snap.docs.forEach(d => {
         const data = d.data();
         if (data.createdAt && Number.isInteger(data.createdAt) && (now - data.createdAt > sixMonthsMs)) {
-          // 6개월 경과 데이터 영구 삭제
           db.collection(reportsPath).doc(d.id).delete().catch(e => console.error("삭제 오류", e));
         } else if (data.deleted && data.deletedAt && (now - data.deletedAt > thirtyDaysMs)) {
-          // 휴지통에서 30일 경과 시 자동 영구 삭제
           db.collection(reportsPath).doc(d.id).delete().catch(e => console.error("영구 삭제 오류", e));
-        } else { 
-          validData.push({id: d.id, ...data}); 
-        }
+        } else { validData.push({id: d.id, ...data}); }
       });
       validData.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       setReports(validData);
     });
 
     const unsubLogs = db.collection(logsPath).onSnapshot(snap => {
-      const now = Date.now();
-      const validLogs = [];
+      const now = Date.now(); const validLogs = [];
       snap.docs.forEach(d => {
         const data = d.data();
         if (data.createdAt && Number.isInteger(data.createdAt) && (now - data.createdAt > sixMonthsMs)) {
@@ -1124,7 +1072,6 @@ function App() {
 
   if (view === 'register') return <RegisterForm user={user} setProfile={setUserProfile} setView={setView} showToast={toast} />;
 
-  // 정상 활성 데이터와 휴지통 데이터 분리
   const activeReports = reports.filter(r => !r.deleted);
   const trashReports = reports.filter(r => r.deleted);
 
@@ -1135,24 +1082,11 @@ function App() {
     return matchSearch && matchStatus && matchCategory;
   });
 
-  // --- 다중 선택 관련 기능 ---
   const isAllSelected = filtered.length > 0 && filtered.every(r => selectedIds.includes(r.id));
-
-  const handleToggleAll = (e) => {
-    if (e.target.checked) {
-      setSelectedIds(filtered.map(r => r.id));
-    } else {
-      setSelectedIds([]);
-    }
-  };
-
+  const handleToggleAll = (e) => { if (e.target.checked) setSelectedIds(filtered.map(r => r.id)); else setSelectedIds([]); };
   const handleToggleOne = (e, id) => {
-    e.stopPropagation(); // 클릭 이벤트가 행(상세보기)으로 전파되지 않도록 차단
-    if (e.target.checked) {
-      setSelectedIds(prev => [...prev, id]);
-    } else {
-      setSelectedIds(prev => prev.filter(i => i !== id));
-    }
+    e.stopPropagation();
+    if (e.target.checked) setSelectedIds(prev => [...prev, id]); else setSelectedIds(prev => prev.filter(i => i !== id));
   };
 
   const handleDeleteSelected = async () => {
@@ -1160,11 +1094,8 @@ function App() {
     if (window.confirm(`선택한 ${selectedIds.length}개의 점검 내역을 휴지통으로 이동하시겠습니까?`)) {
       try {
         await Promise.all(selectedIds.map(id => db.collection(reportsPath).doc(id).update({ deleted: true, deletedAt: Date.now() })));
-        toast(`선택한 ${selectedIds.length}개의 항목이 휴지통으로 이동되었습니다.`);
-        setSelectedIds([]);
-      } catch (err) {
-        toast('항목 이동 중 오류가 발생했습니다.');
-      }
+        toast(`선택한 ${selectedIds.length}개의 항목이 휴지통으로 이동되었습니다.`); setSelectedIds([]);
+      } catch (err) { toast('항목 이동 중 오류가 발생했습니다.'); }
     }
   };
 
@@ -1209,7 +1140,6 @@ function App() {
               </button>
             </div>
 
-            {}
             {activeTab === 'voc' && (
               <div className="w-full max-w-7xl mx-auto animate-in fade-in duration-300">
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
@@ -1236,28 +1166,17 @@ function App() {
 
                     <div className="relative flex-1 min-w-[200px] w-full">
                       <Icon name="search" size={18} className="absolute left-4 top-3.5 text-gray-400 pointer-events-none"/>
-                      <input type="text" placeholder="제목/상세위치 검색" 
-                             className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl bg-gray-50 outline-none text-sm font-bold" 
-                             value={tempSearchTerm} 
-                             onChange={e => setTempSearchTerm(e.target.value)} 
-                             onKeyDown={e => { if(e.key === 'Enter') handleSearch(); }} />
+                      <input type="text" placeholder="제목/상세위치 검색" className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl bg-gray-50 outline-none text-sm font-bold" value={tempSearchTerm} onChange={e => setTempSearchTerm(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleSearch(); }} />
                     </div>
 
-                    <button onClick={handleSearch} className="bg-slate-700 hover:bg-slate-800 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-md w-full sm:w-auto">
-                      <Icon name="search" size={18}/> 검색
-                    </button>
+                    <button onClick={handleSearch} className="bg-slate-700 hover:bg-slate-800 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-md w-full sm:w-auto"><Icon name="search" size={18}/> 검색</button>
                   </div>
 
                   <div className="w-full lg:w-auto shrink-0 border-t lg:border-t-0 pt-4 lg:pt-0 border-gray-100 flex flex-wrap justify-end gap-2">
-                    {/* 휴지통 이동 버튼 */}
                     {selectedIds.length > 0 && (
-                      <button onClick={handleDeleteSelected} className="bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-sm transition-colors w-full sm:w-auto">
-                        <Icon name="trash-2" size={18}/> 휴지통으로 이동 ({selectedIds.length})
-                      </button>
+                      <button onClick={handleDeleteSelected} className="bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-sm transition-colors w-full sm:w-auto"><Icon name="trash-2" size={18}/> 휴지통으로 이동 ({selectedIds.length})</button>
                     )}
-                    <button onClick={() => { setSelected(null); setView('form'); }} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-md w-full sm:w-auto">
-                      <Icon name="plus" size={18}/> 신규 등록
-                    </button>
+                    <button onClick={() => { setSelected(null); setView('form'); }} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-md w-full sm:w-auto"><Icon name="plus" size={18}/> 신규 등록</button>
                   </div>
                 </div>
 
@@ -1266,15 +1185,7 @@ function App() {
                     <table className="w-full text-left text-sm whitespace-nowrap">
                       <thead className="bg-gray-100 border-b border-gray-200 text-gray-700">
                         <tr>
-                          {/* 전체 선택 체크박스 열 */}
-                          <th className="p-5 font-black w-12 text-center">
-                            <input 
-                              type="checkbox" 
-                              className="w-4 h-4 cursor-pointer accent-blue-600" 
-                              checked={isAllSelected} 
-                              onChange={handleToggleAll} 
-                            />
-                          </th>
+                          <th className="p-5 font-black w-12 text-center"><input type="checkbox" className="w-4 h-4 cursor-pointer accent-blue-600" checked={isAllSelected} onChange={handleToggleAll} /></th>
                           <th className="p-5 font-black w-32 text-center">진행상태</th>
                           <th className="p-5 font-black w-24">층수</th>
                           <th className="p-5 font-black">대분류</th>
@@ -1291,15 +1202,7 @@ function App() {
                           const isSelected = selectedIds.includes(r.id);
                           return (
                             <tr key={r.id} onClick={() => { setSelected(r); setView('detail'); }} className={`hover:bg-blue-50 cursor-pointer transition-colors group ${isEmergency ? 'bg-red-50/30' : ''} ${isSelected ? 'bg-blue-50/50' : ''}`}>
-                              {/* 개별 선택 체크박스 열 */}
-                              <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
-                                <input 
-                                  type="checkbox" 
-                                  className="w-4 h-4 cursor-pointer accent-blue-600" 
-                                  checked={isSelected} 
-                                  onChange={(e) => handleToggleOne(e, r.id)} 
-                                />
-                              </td>
+                              <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}><input type="checkbox" className="w-4 h-4 cursor-pointer accent-blue-600" checked={isSelected} onChange={(e) => handleToggleOne(e, r.id)} /></td>
                               <td className="p-5 text-center">
                                 <span className={`px-4 py-1.5 rounded-full text-xs font-black border shadow-sm ${
                                   r.status==='조치 완료'?'bg-green-100 text-green-700 border-green-200':
@@ -1325,7 +1228,6 @@ function App() {
               </div>
             )}
 
-            {}
             {activeTab === 'construction' && (
               <div className="w-full max-w-7xl mx-auto animate-in fade-in duration-300">
                 <div className="flex justify-between items-center mb-6">
@@ -1333,22 +1235,13 @@ function App() {
                     <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2"><Icon name="hammer" className="text-amber-600"/> 공사일지 현황</h2>
                     <p className="text-sm text-gray-500 font-bold mt-1">사내 진행중인 공사 및 완료 내역을 관리합니다.</p>
                   </div>
-                  <button onClick={() => { setSelectedConst(null); setView('const_form'); }} className="bg-amber-600 hover:bg-amber-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-md transition-transform hover:scale-[1.02] active:scale-95">
-                    <Icon name="plus" size={18}/> 새 공사일지 등록
-                  </button>
+                  <button onClick={() => { setSelectedConst(null); setView('const_form'); }} className="bg-amber-600 hover:bg-amber-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-black shadow-md transition-transform hover:scale-[1.02] active:scale-95"><Icon name="plus" size={18}/> 새 공사일지 등록</button>
                 </div>
-
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm whitespace-nowrap">
                       <thead className="bg-amber-50 border-b border-amber-100 text-amber-900">
-                        <tr>
-                          <th className="p-5 font-black w-24 text-center">상태</th>
-                          <th className="p-5 font-black">공종</th>
-                          <th className="p-5 font-black w-full">공사명 (위치)</th>
-                          <th className="p-5 font-black">공사일</th>
-                          <th className="p-5 font-black">완료/예정일</th>
-                        </tr>
+                        <tr><th className="p-5 font-black w-24 text-center">상태</th><th className="p-5 font-black">공종</th><th className="p-5 font-black w-full">공사명 (위치)</th><th className="p-5 font-black">공사일</th><th className="p-5 font-black">완료/예정일</th></tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {constructions.length === 0 ? (
@@ -1357,29 +1250,11 @@ function App() {
                           const isScheduled = c.status === '공사예정';
                           return (
                             <tr key={c.id} onClick={() => { setSelectedConst(c); setView('const_detail'); }} className="hover:bg-amber-50/50 cursor-pointer transition-colors group">
-                              <td className="p-5 text-center">
-                                {isScheduled ? (
-                                  <div className="flex flex-col items-center justify-center gap-1">
-                                    <Icon name="siren" size={24} className="text-red-500 animate-pulse" />
-                                    <span className="text-[10px] font-black text-red-600 bg-red-50 px-2 py-0.5 rounded-full">공사예정</span>
-                                  </div>
-                                ) : (
-                                  <span className="px-3 py-1.5 rounded-full text-xs font-black border bg-green-50 text-green-700 border-green-200">공사완료</span>
-                                )}
-                              </td>
+                              <td className="p-5 text-center">{isScheduled ? (<div className="flex flex-col items-center justify-center gap-1"><Icon name="siren" size={24} className="text-red-500 animate-pulse" /><span className="text-[10px] font-black text-red-600 bg-red-50 px-2 py-0.5 rounded-full">공사예정</span></div>) : (<span className="px-3 py-1.5 rounded-full text-xs font-black border bg-green-50 text-green-700 border-green-200">공사완료</span>)}</td>
                               <td className="p-5 font-bold text-gray-600">{c.trade}</td>
-                              <td className="p-5 font-black text-gray-900 group-hover:text-amber-700">
-                                <div>{c.title}</div>
-                                <div className="text-xs text-gray-500 font-bold mt-1 flex items-center gap-1"><Icon name="map-pin" size={12}/> {c.locationDesc}</div>
-                              </td>
+                              <td className="p-5 font-black text-gray-900 group-hover:text-amber-700"><div>{c.title}</div><div className="text-xs text-gray-500 font-bold mt-1 flex items-center gap-1"><Icon name="map-pin" size={12}/> {c.locationDesc}</div></td>
                               <td className="p-5 font-bold text-gray-600">{c.constructionDate}</td>
-                              <td className="p-5 font-bold">
-                                {isScheduled ? (
-                                  <span className="text-amber-600 flex items-center gap-1"><Icon name="calendar-clock" size={14}/> {c.expectedDate}</span>
-                                ) : (
-                                  <span className="text-green-600 flex items-center gap-1"><Icon name="calendar-check" size={14}/> {c.completedDate}</span>
-                                )}
-                              </td>
+                              <td className="p-5 font-bold">{isScheduled ? (<span className="text-amber-600 flex items-center gap-1"><Icon name="calendar-clock" size={14}/> {c.expectedDate}</span>) : (<span className="text-green-600 flex items-center gap-1"><Icon name="calendar-check" size={14}/> {c.completedDate}</span>)}</td>
                             </tr>
                           );
                         })}
@@ -1393,7 +1268,6 @@ function App() {
             {activeTab === 'calendar' && <CalendarView logs={dailyLogs} reports={activeReports} constructions={constructions} userProfile={userProfile} showToast={toast} />}
             {activeTab === 'excel' && <ExcelExportView reports={activeReports} />}
             
-            {}
             {activeTab === 'trash' && (
               <div className="w-full max-w-7xl mx-auto animate-in fade-in duration-300">
                 <div className="flex justify-between items-center mb-6">
@@ -1408,31 +1282,22 @@ function App() {
                           await Promise.all(selectedIds.map(id => db.collection(reportsPath).doc(id).update({ deleted: firebase.firestore.FieldValue.delete(), deletedAt: firebase.firestore.FieldValue.delete() })));
                           toast('복구되었습니다.'); setSelectedIds([]);
                         }
-                      }} className="bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 px-4 py-2.5 rounded-xl font-black flex items-center gap-2 transition-colors">
-                        <Icon name="refresh-cw" size={18}/> 선택 복구 ({selectedIds.length})
-                      </button>
+                      }} className="bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 px-4 py-2.5 rounded-xl font-black flex items-center gap-2 transition-colors"><Icon name="refresh-cw" size={18}/> 선택 복구 ({selectedIds.length})</button>
                       <button onClick={async () => {
                         if (window.confirm(`선택한 ${selectedIds.length}개의 항목을 완전히 영구 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
                           await Promise.all(selectedIds.map(id => db.collection(reportsPath).doc(id).delete()));
                           toast('영구 삭제되었습니다.'); setSelectedIds([]);
                         }
-                      }} className="bg-red-600 text-white hover:bg-red-700 px-4 py-2.5 rounded-xl font-black shadow-md flex items-center gap-2 transition-colors">
-                        <Icon name="trash-2" size={18}/> 영구 삭제 ({selectedIds.length})
-                      </button>
+                      }} className="bg-red-600 text-white hover:bg-red-700 px-4 py-2.5 rounded-xl font-black shadow-md flex items-center gap-2 transition-colors"><Icon name="trash-2" size={18}/> 영구 삭제 ({selectedIds.length})</button>
                     </div>
                   )}
                 </div>
-
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm whitespace-nowrap">
                       <thead className="bg-red-50 border-b border-red-100 text-red-900">
                         <tr>
-                          <th className="p-5 font-black w-12 text-center">
-                            <input type="checkbox" className="w-4 h-4 cursor-pointer accent-red-600" 
-                              checked={trashReports.length > 0 && trashReports.every(r => selectedIds.includes(r.id))} 
-                              onChange={(e) => setSelectedIds(e.target.checked ? trashReports.map(r => r.id) : [])} />
-                          </th>
+                          <th className="p-5 font-black w-12 text-center"><input type="checkbox" className="w-4 h-4 cursor-pointer accent-red-600" checked={trashReports.length > 0 && trashReports.every(r => selectedIds.includes(r.id))} onChange={(e) => setSelectedIds(e.target.checked ? trashReports.map(r => r.id) : [])} /></th>
                           <th className="p-5 font-black w-32">대분류</th>
                           <th className="p-5 font-black w-full">제목 (위치)</th>
                           <th className="p-5 font-black w-32">삭제 일자</th>
@@ -1445,20 +1310,8 @@ function App() {
                         ) : trashReports.map(r => {
                           const isSelected = selectedIds.includes(r.id);
                           return (
-                            <tr key={r.id} className={`hover:bg-red-50/50 cursor-pointer transition-colors ${isSelected ? 'bg-red-50/50' : ''}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (isSelected) setSelectedIds(prev => prev.filter(i => i !== r.id));
-                                  else setSelectedIds(prev => [...prev, r.id]);
-                                }}>
-                              <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
-                                <input type="checkbox" className="w-4 h-4 cursor-pointer accent-red-600" checked={isSelected} 
-                                  onChange={(e) => {
-                                    e.stopPropagation();
-                                    if (e.target.checked) setSelectedIds(prev => [...prev, r.id]);
-                                    else setSelectedIds(prev => prev.filter(i => i !== r.id));
-                                  }} />
-                              </td>
+                            <tr key={r.id} className={`hover:bg-red-50/50 cursor-pointer transition-colors ${isSelected ? 'bg-red-50/50' : ''}`} onClick={(e) => { e.stopPropagation(); if (isSelected) setSelectedIds(prev => prev.filter(i => i !== r.id)); else setSelectedIds(prev => [...prev, r.id]); }}>
+                              <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}><input type="checkbox" className="w-4 h-4 cursor-pointer accent-red-600" checked={isSelected} onChange={(e) => { e.stopPropagation(); if (e.target.checked) setSelectedIds(prev => [...prev, r.id]); else setSelectedIds(prev => prev.filter(i => i !== r.id)); }} /></td>
                               <td className="p-5 font-bold text-gray-600">{r.category}</td>
                               <td className="p-5 font-black text-gray-500 line-through opacity-70">{r.title}</td>
                               <td className="p-5 font-bold text-gray-500">{r.deletedAt ? new Date(r.deletedAt).toLocaleDateString() : '-'}</td>
@@ -1485,7 +1338,6 @@ function App() {
             <ReportDetail report={selectedReport} userProfile={userProfile} onEdit={() => setView('form')} onDelete={() => setView('dashboard')} showToast={toast} />
           </div>
         )}
-
         {view === 'const_form' && (
            <div className="w-full max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
              <ConstructionForm userProfile={userProfile} existingData={selectedConst} onSave={() => setView('dashboard')} onCancel={() => setView(selectedConst ? 'const_detail' : 'dashboard')} showToast={toast} />
